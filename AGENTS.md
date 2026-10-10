@@ -27,10 +27,6 @@
 - PR descriptions are terse and durable: what changed and why, in a form that stays true after merge. No attribution.
 - Run commands through the pinned pnpm (`corepack pnpm …` if Corepack isn't enabled).
 
-## Agent loop
+## Quality gate
 
-repo: deanbot/field-notes
-in-progress-label: in-progress
-quality-gates: pnpm verify
-
-`pnpm verify` runs build, typecheck, lint, format check, tests with coverage, package checks, size budgets, knip and the pack smoke test.
+`pnpm verify` must pass before a PR. It runs build, typecheck, lint, format check, tests with coverage, package checks, size budgets, knip and the pack smoke test.

@@ -379,13 +379,13 @@ Real browsers replace happy-dom because Shadow DOM, focus, IndexedDB, clipboard 
 
 ---
 
-## 10. Milestones (each one maps to issues for agent-loop)
+## 10. Milestones (tracked as GitHub milestones and issues)
 
 **M0 — Scaffold**
 
 - pnpm workspaces, TypeScript strict, tsdown builds, Vitest (node + browser mode), Playwright, ESLint/Prettier, publint/attw, size-limit, knip, Changesets, Renovate, CI, MIT license
 - CONTRIBUTING.md, issue/PR templates, CODE_OF_CONDUCT, SECURITY.md (the sink is a local network listener)
-- AGENTS.md with an `## Agent loop` block
+- AGENTS.md with architecture rules, conventions and the quality gate
 - pack smoke test: install the packed tarball into a temp project; assert zero runtime deps, no leaked workspace imports, every subpath imports, the bin runs, and types resolve
 
 **M1 — Spec + core** (`packages/core`)
