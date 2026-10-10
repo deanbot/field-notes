@@ -7,6 +7,8 @@
 ## Architecture rules
 
 - **Only `packages/field-notes` is published.** The `@field-notes/*` packages are private and bundled into it. The published package must keep **zero runtime dependencies**, and `pnpm smoke` enforces this.
+  - Add a library (zod, yaml, fflate, lit, …) as a dependency of the internal package that uses it, never as a `dependency` of `field-notes`.
+  - Add an internal package to `field-notes` devDependencies only once `field-notes` imports it, or knip fails.
 - **Runtime boundaries:** `core` is isomorphic (no DOM, no Node built-ins); `widget` is browser-only; `sink` and `cli` are Node-only.
 - **The widget is a guest in someone else's page.**
   - Register only the `<field-notes>` element; no global CSS or other globals.
@@ -26,6 +28,16 @@
 - Commits are terse, one line where possible. If the work is for a GitHub issue, tag it (`#12`). No AI or tool attribution trailers (no `Co-Authored-By`, no "Generated with").
 - PR descriptions are terse and durable: what changed and why, in a form that stays true after merge. No attribution.
 - Run commands through the pinned pnpm (`corepack pnpm …` if Corepack isn't enabled).
+- Tooling config (`*.config.ts`, `scripts/`) is typechecked by the root `tsconfig.json`, not the package tsconfigs.
+- TypeScript stays below 6.1 until typescript-eslint supports TS 7.
+- Toolchain majors may be newer than you remember. Check the installed docs in `node_modules` before writing config from memory.
+
+## Workflow
+
+- One branch per issue. The PR body includes `Closes #N`.
+- Don't push to `main` or merge without the maintainer's OK.
+- **No agent-loop or other automation that acts on issue or PR text.** This repo is public, and anyone can write that text.
+- Never publish to npm. Releases are gated on the `RELEASE_ENABLED` repository variable, which the maintainer controls.
 
 ## Quality gate
 
