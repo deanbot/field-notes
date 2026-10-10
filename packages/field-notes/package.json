@@ -1,0 +1,55 @@
+{
+  "name": "field-notes",
+  "version": "0.0.0",
+  "description": "Rapid, in-context feedback capture for any web app. Notes land as files in your repo, readable by people and agents.",
+  "keywords": [
+    "feedback",
+    "notes",
+    "web-component",
+    "custom-element",
+    "devtools",
+    "agents"
+  ],
+  "license": "MIT",
+  "author": "Dean Verleger",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deanbot/field-notes.git",
+    "directory": "packages/field-notes"
+  },
+  "homepage": "https://github.com/deanbot/field-notes#readme",
+  "bugs": "https://github.com/deanbot/field-notes/issues",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./sink": {
+      "types": "./dist/sink.d.ts",
+      "default": "./dist/sink.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "field-notes": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "prepack": "cp ../../README.md ../../LICENSE .",
+    "typecheck": "tsc --noEmit",
+    "check:package": "publint --strict && attw --pack . --profile esm-only"
+  },
+  "devDependencies": {
+    "@field-notes/cli": "workspace:*",
+    "@field-notes/sink": "workspace:*",
+    "@field-notes/widget": "workspace:*"
+  }
+}

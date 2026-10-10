@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.tgz
+.DS_Store
+*.log
+.field-notes/
+playwright-report/
+test-results/
+.vitest-attachments/
+
+# Copied from the repo root by the field-notes prepack script
+packages/field-notes/README.md
+packages/field-notes/LICENSE

@@ -1,0 +1,45 @@
+import js from '@eslint/js';
+import prettier from 'eslint-config-prettier';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  {
+    ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', '.changeset/**'],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.strictTypeChecked,
+  ...tseslint.configs.stylisticTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: {
+          allowDefaultProject: ['*.js'],
+        },
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      '@typescript-eslint/consistent-type-imports': 'error',
+      '@typescript-eslint/no-import-type-side-effects': 'error',
+    },
+  },
+  {
+    files: ['packages/widget/src/**'],
+    languageOptions: { globals: globals.browser },
+  },
+  {
+    files: [
+      'packages/{core,sink,cli,field-notes}/src/**',
+      'scripts/**',
+      '*.config.{js,ts}',
+      'packages/*/*.config.ts',
+    ],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['**/*.js', '**/*.mjs'],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  prettier,
+);

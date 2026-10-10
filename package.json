@@ -1,0 +1,47 @@
+{
+  "name": "field-notes-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter field-notes build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "check:package": "pnpm --filter field-notes check:package",
+    "size": "size-limit",
+    "knip": "knip",
+    "smoke": "node scripts/smoke-pack.ts",
+    "verify": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:coverage && pnpm check:package && pnpm size && pnpm knip && pnpm smoke",
+    "changeset": "changeset",
+    "release": "pnpm build && changeset publish"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@changesets/cli": "3.0.3",
+    "@eslint/js": "10.0.1",
+    "@size-limit/file": "14.2.0",
+    "@types/node": "22.20.5",
+    "@vitest/browser-playwright": "5.0.3",
+    "@vitest/coverage-v8": "5.0.3",
+    "eslint": "10.12.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.13.0",
+    "knip": "6.41.0",
+    "playwright": "1.64.0",
+    "prettier": "3.9.9",
+    "publint": "0.3.25",
+    "size-limit": "14.2.0",
+    "tsdown": "0.23.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  }
+}
