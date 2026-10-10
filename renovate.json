@@ -1,18 +1,29 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", ":semanticCommitTypeAll(chore)"],
+  "dependencyDashboard": false,
   "rangeStrategy": "pin",
   "lockFileMaintenance": { "enabled": true },
   "packageRules": [
+    {
+      "description": "engines.node is the supported range for users; change it deliberately",
+      "matchDepTypes": ["engines"],
+      "enabled": false
+    },
+    {
+      "description": ".nvmrc tracks the minimum supported Node major",
+      "matchManagers": ["nvm"],
+      "enabled": false
+    },
     {
       "matchUpdateTypes": ["minor", "patch"],
       "matchDepTypes": ["devDependencies"],
       "groupName": "dev dependencies (non-major)"
     },
     {
+      "description": "typescript-eslint supports TypeScript < 6.1; lift when it adds support",
       "matchPackageNames": ["typescript"],
-      "allowedVersions": "<6.1",
-      "description": "typescript-eslint supports TypeScript < 6.1; lift when it adds support"
+      "allowedVersions": "<6.1"
     }
   ]
 }
