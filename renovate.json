@@ -3,7 +3,9 @@
   "extends": ["config:recommended", ":semanticCommitTypeAll(chore)"],
   "dependencyDashboard": false,
   "rangeStrategy": "pin",
-  "lockFileMaintenance": { "enabled": true },
+  "lockFileMaintenance": {
+    "enabled": true
+  },
   "packageRules": [
     {
       "description": "engines.node is the supported range for users; change it deliberately",
@@ -14,6 +16,11 @@
       "description": ".nvmrc tracks the minimum supported Node major",
       "matchManagers": ["nvm"],
       "enabled": false
+    },
+    {
+      "description": "@types/node matches the minimum supported Node major",
+      "matchPackageNames": ["@types/node"],
+      "allowedVersions": "<23"
     },
     {
       "matchUpdateTypes": ["minor", "patch"],
