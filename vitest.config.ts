@@ -24,6 +24,9 @@ export default defineConfig({
       {
         test: {
           name: 'browser',
+          // One file at a time: files share an origin, so localStorage and
+          // IndexedDB (the outbox) would leak between files run in parallel.
+          fileParallelism: false,
           // core is isomorphic: its *.browser.test.ts files prove it runs without Node.
           include: ['packages/widget/src/**/*.test.ts', 'packages/core/src/**/*.browser.test.ts'],
           browser: {

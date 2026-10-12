@@ -43,6 +43,7 @@ beforeEach(async () => {
 afterEach(() => {
   handle?.unmount();
   for (const controller of controllers.splice(0)) controller.abort();
+  localStorage.clear();
   document.body.replaceChildren();
   vi.restoreAllMocks();
 });
@@ -268,7 +269,9 @@ describe('My notes', () => {
     await openNotes();
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
     expect(await outbox().list()).toEqual([]);
-    await userEvent.click(el('#field-notes-mode'));
+    // Firefox treats Ctrl+Enter on the focused "New note" button as a click.
+    if (modeButton()?.textContent.trim() === 'New note')
+      await userEvent.click(el('#field-notes-mode'));
     expect(textarea().value).toBe('draft in progress');
   });
 

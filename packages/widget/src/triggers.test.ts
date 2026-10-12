@@ -1,5 +1,5 @@
 import { userEvent } from 'vitest/browser';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TAG_NAME } from './element.ts';
 import { type FieldNotesHandle, type FieldNotesOptions, mountFieldNotes } from './mount.ts';
 
@@ -9,6 +9,10 @@ function mount(options: FieldNotesOptions = {}): FieldNotesHandle {
   handle = mountFieldNotes({ enabled: true, ...options });
   return handle;
 }
+
+beforeEach(() => {
+  localStorage.clear();
+});
 
 afterEach(() => {
   handle?.unmount();
