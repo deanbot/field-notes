@@ -1,13 +1,15 @@
 // Delivery: sends the outbox to the local sink, and keeps trying with
-// backoff while the sink is down. A lazy chunk, loaded only when the widget
-// has a token and there's something to send.
+// backoff while the sink is down. A lazy chunk, loaded only when there's
+// something to send.
 import { createLocalTransport } from './local-transport.ts';
 import { createOutbox } from './outbox.ts';
+import { type Transport, TransportError } from './transport.ts';
 
 export interface SyncOptions {
   /** The sink's URL; relative URLs resolve against the page. */
   readonly endpoint: string;
-  readonly token: string;
+  /** Without one, it's fetched from a same-origin sink (see `findToken`). */
+  readonly token?: string | undefined;
   /** Hears the pending count after each change, for the badge. */
   readonly changed: (pending: number) => void;
   /** Unmount: stops retrying and aborts a send in flight. */
@@ -29,11 +31,45 @@ export const DELIVERED_RETENTION_MS: number = 7 * 24 * 60 * 60 * 1000;
 export function startSync(options: SyncOptions): Sync {
   const { signal } = options;
   const outbox = createOutbox(signal, options.changed);
-  const transport = createLocalTransport({
-    endpoint: new URL(options.endpoint, location.href).href,
-    token: options.token,
-    signal,
-  });
+  const endpoint = new URL(options.endpoint, location.href);
+  let transport: Transport | undefined;
+
+  /**
+   * A sink on the page's own origin (the Vite plugin, the middleware) hands
+   * its token to a same-origin GET. Anything else answering (a dev server
+   * without the plugin) means there's no sink: nothing is sent, and the
+   * next kick asks again.
+   */
+  const findToken = async (): Promise<string | undefined> => {
+    if (options.token || endpoint.origin !== location.origin) return options.token;
+    try {
+      const res = await fetch(endpoint, { cache: 'no-store', signal });
+      const body: unknown = res.headers.get('content-type')?.includes('json') && (await res.json());
+      const found = (body as { token?: unknown } | undefined)?.token;
+      return typeof found === 'string' ? found : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const sender = async (): Promise<Transport | undefined> => {
+    if (transport) return transport;
+    const found = await findToken();
+    if (!found) return undefined;
+    const send = createLocalTransport({ endpoint: endpoint.href, token: found, signal });
+    transport = async (note, attachments) => {
+      try {
+        return await send(note, attachments);
+      } catch (error) {
+        // A fetched token went stale (`.token` was replaced): fetch it again.
+        if (!options.token && error instanceof TransportError && error.message.startsWith('token'))
+          transport = undefined;
+        throw error;
+      }
+    };
+    return transport;
+  };
+
   let running = false;
   let again = false;
   let delay = RETRY_MIN_MS;
@@ -52,7 +88,9 @@ export function startSync(options: SyncOptions): Sync {
     try {
       do {
         again = false;
-        if ((await outbox.flush(transport)).stopped) {
+        const send = await sender();
+        if (!send) return;
+        if ((await outbox.flush(send)).stopped) {
           retryLater();
           return;
         }

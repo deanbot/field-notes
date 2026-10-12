@@ -64,8 +64,10 @@ export interface FieldNotesOptions {
    */
   endpoint?: string | undefined;
   /**
-   * The sink's token. Notes are sent only when there's one; until then they
-   * wait in the outbox. The script tag served by `field-notes serve` has it.
+   * The sink's token. Without one, the widget asks a sink on the page's own
+   * origin (the Vite plugin, the middleware) for it; a sink elsewhere needs
+   * it given. Until there's one, notes wait in the outbox. The script tag
+   * served by `field-notes serve` has it.
    */
   token?: string | undefined;
 }
@@ -201,20 +203,18 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
     // An open panel shows the count too (the only badge without a button).
     shown?.setPending(root, pending);
   };
-  // Delivery loads only with a token and something to send, so mounting
-  // stays cheap. Its own outbox reports to the mirror only: a report from
-  // it must not start another send.
+  // Delivery loads only when there's something to send, so mounting stays
+  // cheap; it finds the token itself. Its own outbox reports to the mirror
+  // only: a report from it must not start another send.
   let sync: Promise<SyncModule.Sync | undefined> | undefined;
-  const { token } = options;
   const send = (): void => {
-    if (!token) return;
     sync ??= import('./sync.ts').then(
       (mod) =>
         signal.aborted
           ? undefined
           : mod.startSync({
               endpoint: options.endpoint ?? '/__field-notes',
-              token,
+              token: options.token,
               changed: mirror,
               signal,
             }),

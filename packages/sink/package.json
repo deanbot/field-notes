@@ -11,5 +11,8 @@
   },
   "dependencies": {
     "@field-notes/core": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
   }
 }

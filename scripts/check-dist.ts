@@ -4,13 +4,14 @@
 // widget, and that the script-tag and npm builds share a page in a browser.
 // (The DOM types are for the callbacks that run in that page.)
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
-import { build, type Rolldown } from 'vite';
+import { build, createServer as createViteServer, type Rolldown } from 'vite';
+import type * as VitePluginModule from '../packages/field-notes/src/vite.ts';
 
 const dist = resolve(import.meta.dirname, '../packages/field-notes/dist');
 const read = (file: string): string => readFileSync(join(dist, file), 'utf8');
@@ -278,6 +279,63 @@ await check('a script tag from the built `serve` captures a note to disk', async
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+await check(
+  'the built Vite plugin takes a note from the built widget, with no options',
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), 'field-notes-check-vite-'));
+    // The page imports what `field-notes` ships; no token, no endpoint.
+    writeFileSync(
+      join(root, 'index.html'),
+      `<!doctype html><html><body><script type="module">
+      import { mountFieldNotes } from '/@fs${join(dist, 'index.js')}';
+      window.handle = mountFieldNotes({ enabled: true });
+    </script></body></html>`,
+    );
+    const { fieldNotes } = (await import(join(dist, 'vite.js'))) as typeof VitePluginModule;
+    const server = await createViteServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [fieldNotes()],
+      server: { port: 0, host: '127.0.0.1', fs: { allow: [root, dist] } },
+    });
+    const browser = await chromium.launch();
+    try {
+      await server.listen();
+      const { port } = server.httpServer?.address() as AddressInfo;
+      const page = await browser.newPage();
+      const seen: string[] = [];
+      page.on('console', (message) => seen.push(`${message.type()}: ${message.text()}`));
+      page.on('pageerror', (error) => seen.push(error.message));
+      page.on('response', (res) => {
+        if (res.url().includes('__field-notes'))
+          seen.push(`${res.request().method()} ${String(res.status())}`);
+      });
+      await page.goto(`http://localhost:${String(port)}/`);
+      await page.waitForFunction(() => 'handle' in window);
+      await page.evaluate(() => (window as { handle?: { open(): Promise<void> } }).handle?.open());
+      await page.locator('field-notes textarea').fill('From the Vite plugin');
+      await page.keyboard.press('Control+Enter');
+      const items = join(root, '.field-notes', 'items');
+      let stored: string[] = [];
+      for (let i = 0; i < 100 && stored.length === 0; i++) {
+        await new Promise((done) => setTimeout(done, 100));
+        stored = readdirSync(items);
+      }
+      assert(
+        stored.length === 1,
+        `expected one note on disk, found ${String(stored.length)}\n${seen.join('\n')}`,
+      );
+      const note = readFileSync(join(items, stored[0] ?? '', 'note.md'), 'utf8');
+      assert(note.includes('From the Vite plugin'), 'the note on disk is not the one sent');
+    } finally {
+      await browser.close();
+      await server.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
 if (process.exitCode) console.error('check-dist: FAILED');
 else console.log('check-dist: ok');

@@ -184,9 +184,14 @@ try {
       'sink-consumer',
       [
         `import { createSinkHandler, isAllowedOrigin, type SinkHandler } from '${pkg.name}/sink';`,
+        `import fieldNotesDefault, { fieldNotes, type FieldNotesVitePlugin } from '${pkg.name}/vite';`,
+        `import { fieldNotesMiddleware } from '${pkg.name}/middleware';`,
         `const allowed: boolean = isAllowedOrigin('http://localhost:1', []);`,
         `const handler: SinkHandler = createSinkHandler({ dir: '.field-notes', token: 't' });`,
-        `export { allowed, handler };`,
+        `const plugin: FieldNotesVitePlugin = fieldNotes({ origins: ['http://app.test:*'] });`,
+        `const same: FieldNotesVitePlugin = fieldNotesDefault();`,
+        `const middleware: SinkHandler = fieldNotesMiddleware({ force: false });`,
+        `export { allowed, handler, plugin, same, middleware };`,
       ],
       ['node'],
     );

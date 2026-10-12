@@ -460,6 +460,26 @@ describe('refusing requests', () => {
     expect(text.status).toBe(415);
   });
 
+  it('hands the token only to a same-origin GET, and only when asked to', async () => {
+    await start({ tokenToSameOrigin: true });
+    const get = (headers: Record<string, string>): Promise<Response> =>
+      fetch(`${base}/__field-notes`, { headers });
+    const same = await get({ 'sec-fetch-site': 'same-origin' });
+    expect(same.status).toBe(200);
+    expect(await same.json()).toEqual({ token: TOKEN });
+    expect(same.headers.get('cache-control')).toBe('no-store');
+    for (const headers of [{ 'sec-fetch-site': 'cross-site' }, {}, { origin: ORIGIN }]) {
+      const res = await get(headers);
+      expect(res.status).toBe(403);
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    }
+    // POSTs still need the token.
+    expect((await post(payload(), { [TOKEN_HEADER]: '' })).status).toBe(401);
+    await stop(server);
+    await start();
+    expect((await get({ 'sec-fetch-site': 'same-origin' })).status).toBe(403);
+  });
+
   it('passes other paths to next, or answers 404', async () => {
     const handler = createSinkHandler({ dir, token: TOKEN, defaultAuthor: false });
     const next = vi.fn();
