@@ -15,8 +15,9 @@ declare const process: { env: { NODE_ENV?: string } };
  *
  * The check is left for the host's bundler to resolve (Vite, webpack, Next
  * and others replace `process.env.NODE_ENV`), so a production build folds it
- * to `false`. Where nothing replaces it, as in the script-tag build that only
- * the local dev sink serves, `process` doesn't exist and this is a dev build.
+ * to `false`. Where nothing replaces it (ESM loaded without a bundler),
+ * `process` doesn't exist and this counts as a dev build. The script-tag
+ * build fixes it to development at build time: only the dev sink serves it.
  */
 export function isDevBuild(): boolean {
   try {

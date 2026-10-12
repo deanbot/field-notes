@@ -64,6 +64,25 @@ describe('startScriptTag', () => {
     expect(all[0]).not.toBe(first);
   });
 
+  it('unmount() before the document loads cancels the pending mount', () => {
+    vi.spyOn(document, 'readyState', 'get').mockReturnValue('loading');
+    api = startScriptTag(tag());
+    api.unmount();
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    expect(document.querySelectorAll(TAG_NAME)).toHaveLength(0);
+  });
+
+  it('mount() before the document loads replaces the pending mount', () => {
+    vi.spyOn(document, 'readyState', 'get').mockReturnValue('loading');
+    api = startScriptTag(tag());
+    api.mount({ enabled: true });
+    const mounted = document.querySelector(TAG_NAME);
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    const all = document.querySelectorAll(TAG_NAME);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toBe(mounted);
+  });
+
   it('is a no-op API before anything mounts', async () => {
     vi.spyOn(document, 'readyState', 'get').mockReturnValue('loading');
     api = startScriptTag(tag());

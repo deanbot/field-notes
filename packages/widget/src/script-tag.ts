@@ -21,19 +21,28 @@ export function scriptOptions(script: HTMLOrSVGScriptElement | null): FieldNotes
 export function startScriptTag(script: HTMLOrSVGScriptElement | null): ScriptApi {
   const defaults = scriptOptions(script);
   let handle: FieldNotesHandle | undefined;
+  // Cancels the mount that waits for the document, once any call overrides it.
+  const pending = new AbortController();
   const api: ScriptApi = {
     mount: (options = defaults) => {
+      pending.abort();
       handle?.unmount();
       handle = mountFieldNotes(options);
       return handle;
     },
     open: () => handle?.open() ?? Promise.resolve(),
     close: () => handle?.close(),
-    unmount: () => handle?.unmount(),
+    unmount: () => {
+      pending.abort();
+      handle?.unmount();
+    },
   };
   // A script tag in <head> runs before <body> exists.
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => api.mount(), { once: true });
+    document.addEventListener('DOMContentLoaded', () => api.mount(), {
+      once: true,
+      signal: pending.signal,
+    });
   } else {
     api.mount();
   }

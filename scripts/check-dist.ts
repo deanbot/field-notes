@@ -66,7 +66,8 @@ await check('the script-tag build is one classic script', () => {
   assert(iife.startsWith('var FieldNotes='), 'it does not define window.FieldNotes');
 });
 
-await check("a consumer's production build drops a DEV-guarded widget", async () => {
+/** Minified chunks of a Vite production build of `source`, importing the built package. */
+async function consumerBuild(source: string): Promise<Rolldown.OutputChunk[]> {
   const output = (await build({
     configFile: false,
     logLevel: 'silent',
@@ -76,20 +77,32 @@ await check("a consumer's production build drops a DEV-guarded widget", async ()
       {
         name: 'entry',
         resolveId: (id) => (id === 'entry' ? id : undefined),
-        load: (id) =>
-          id === 'entry'
-            ? `import { mountFieldNotes } from 'field-notes';\nif (import.meta.env.DEV) mountFieldNotes();\nconsole.log('app');`
-            : undefined,
+        load: (id) => (id === 'entry' ? source : undefined),
       },
     ],
     build: { write: false, minify: true, rolldownOptions: { input: 'entry' } },
   })) as Rolldown.RolldownOutput[] | Rolldown.RolldownOutput;
   const [result] = Array.isArray(output) ? output : [output];
-  const chunks = result?.output.filter((item) => item.type === 'chunk') ?? [];
+  return result?.output.filter((item) => item.type === 'chunk') ?? [];
+}
+
+await check("a consumer's production build drops a DEV-guarded widget", async () => {
+  const chunks = await consumerBuild(
+    `import { mountFieldNotes } from 'field-notes';\nif (import.meta.env.DEV) mountFieldNotes();\nconsole.log('app');`,
+  );
   const code = chunks.map((chunk) => chunk.code).join('');
   assert(chunks.length === 1, `expected one chunk, got ${String(chunks.length)}`);
   assert(code.includes('app'), 'the app code is missing');
   assert(!code.includes('field-notes'), 'widget code is in the production build');
+});
+
+await check("a consumer's production build resolves enabled: 'auto' to off", async () => {
+  const chunks = await consumerBuild(
+    `import { mountFieldNotes } from 'field-notes';\nmountFieldNotes();`,
+  );
+  const code = chunks.map((chunk) => chunk.code).join('');
+  assert(code.includes('field-notes'), 'the widget is missing');
+  assert(!code.includes('process.env'), 'NODE_ENV was left for the browser to look up');
 });
 
 await check('script tag and npm import on one page share a single widget', async () => {
