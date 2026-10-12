@@ -53,12 +53,13 @@ await check('the stub leaves process.env.NODE_ENV for the consumer to resolve', 
   assert(stub.includes('process.env.NODE_ENV'), 'NODE_ENV was resolved at build time');
 });
 
-await check('the panel is a lazy chunk with Lit and without yaml or fflate', () => {
+await check('the panel is a lazy chunk with Lit and Zod, without yaml or fflate', () => {
   assert(panelFile, 'no panel chunk');
   const lazy = ['"', "'", '`'].some((q) => stub.includes(`import(${q}./${panelFile}${q})`));
   assert(lazy, 'the stub does not lazy-load the panel');
   const panel = read(panelFile);
   assert(panel.includes(LIT), 'Lit is not in the panel');
+  assert(panel.includes(ZOD), 'zod/mini is not in the panel (note validation)');
   assert(!YAML.test(panel) && !panel.includes(FFLATE), 'yaml or fflate is in the panel');
 });
 

@@ -257,6 +257,9 @@ importers:
 
   packages/widget:
     dependencies:
+      '@field-notes/core':
+        specifier: workspace:*
+        version: link:../core
       lit:
         specifier: 3.3.3
         version: 3.3.3

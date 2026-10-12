@@ -122,7 +122,9 @@ Production builds tree-shake the widget away when it's guarded by `import.meta.e
 | `author`         | `local`: the sink's `git config user.name`; `export`: asked once, remembered | `string \| () => string` to override                                                                                                                                    |
 | `types`          | `['bug', 'change', 'idea', 'question']`                                      | one-click chip; maps to labels downstream                                                                                                                               |
 | `hotkey`         | `Alt+Shift+F`                                                                | configurable; conflicts with the host are documented                                                                                                                    |
-| `context`        | —                                                                            | `() => object \| Promise<object>`: app version, tenant, feature flags, store state …                                                                                    |
+| `context`        | —                                                                            | `() => object \| Promise<object>`: app version, tenant, feature flags, store state …; called on open, left out if it throws or takes over 1 s                           |
+| `environment`    | `'local'`                                                                    | recorded on each note                                                                                                                                                   |
+| `consoleErrors`  | off                                                                          | opt-in: `true` (last 20) or a number; chains to `console.error` and listens for `error`/`unhandledrejection`                                                            |
 | `screenshot`     | `'dom'`                                                                      | `'dom' \| 'display' \| 'off'`                                                                                                                                           |
 | `theme`          | `auto`                                                                       | light/dark follows `prefers-color-scheme`; override via `--field-notes-*` custom properties: `bg`, `fg`, `border`, `accent`, `radius`, `font`, `button-bg`, `button-fg` |
 
@@ -312,7 +314,9 @@ Until someone opens it, the host pays about 3 KB and a keydown listener. It does
 - **No global side effects.**
   - No polyfills, prototype patching or global CSS.
   - Exactly one global, `window.FieldNotes`, and only in the script-tag build.
-  - One exception, once the panel has loaded: Lit's `lit-html` appends its version to `globalThis.litHtmlVersions` (shared with any Lit on the page) and, where Trusted Types exist, creates a `lit-html` policy. A host that enforces Trusted Types must allow that policy name.
+  - Exceptions, once the panel has loaded, all from libraries that share them with their own copies elsewhere on the page:
+    - Lit's `lit-html` appends its version to `globalThis.litHtmlVersions` and, where Trusted Types exist, creates a `lit-html` policy. A host that enforces Trusted Types must allow that policy name.
+    - Zod 4 creates `globalThis.__zod_globalConfig` and `__zod_globalRegistry`. The widget never writes to either, so a host's own `z.config()` can only change the wording of validation errors the widget doesn't show.
   - The opt-in console-error capture chains to the host's existing handlers instead of replacing them, and restores them on `unmount()`.
 - **Keyboard etiquette.** The hotkey is configurable, and it's ignored while the host has an editable element focused (unless configured otherwise). The widget never calls `preventDefault` on keys it doesn't own. Focus is trapped only while a surface is open, and returns to the host element that had it.
 - **Clean teardown.** `unmount()` removes the element, listeners and timers, so it is safe with HMR and SPA route changes.

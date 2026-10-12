@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 const core = new URL('index.ts', import.meta.url).pathname;
 // The `@field-notes/core/note` subpath.
 const noteEntry = new URL('note.ts', import.meta.url).pathname;
+// The `@field-notes/core/id` subpath.
+const idEntry = new URL('id.ts', import.meta.url).pathname;
 
 /** Minified, gzipped size of a bundle that imports `names` from `from`. */
 async function bundle(names: string[], from = core): Promise<{ code: string; gzip: number }> {
@@ -41,6 +43,13 @@ describe('tree-shaking', () => {
     expect(code.includes('_zod'), 'zod is missing').toBe(true);
     expect(/YAMLParseError|yaml-1\.1/.test(code), 'yaml is in the bundle').toBe(false);
     expect(/invalid zip data|unzipSync|zipSync/.test(code), 'fflate is in the bundle').toBe(false);
+  });
+
+  it('the id subpath brings ulid alone: no zod, yaml or fflate', async () => {
+    const { code, gzip } = await bundle(['ulid'], idEntry);
+    expect(code.includes('_zod'), 'zod is in the bundle').toBe(false);
+    expect(/YAMLParseError|yaml-1\.1/.test(code), 'yaml is in the bundle').toBe(false);
+    expect(gzip).toBeLessThan(400);
   });
 
   it('those markers do appear when yaml and fflate are bundled', async () => {
