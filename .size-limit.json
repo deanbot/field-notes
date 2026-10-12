@@ -4,5 +4,17 @@
     "path": "packages/field-notes/dist/index.js",
     "limit": "3 kB",
     "gzip": true
+  },
+  {
+    "name": "widget panel (lazy chunk)",
+    "path": "packages/field-notes/dist/panel-*.js",
+    "limit": "20 kB",
+    "gzip": true
+  },
+  {
+    "name": "script-tag build (stub and panel)",
+    "path": "packages/field-notes/dist/widget.iife.js",
+    "limit": "23 kB",
+    "gzip": true
   }
 ]

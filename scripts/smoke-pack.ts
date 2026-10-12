@@ -113,12 +113,14 @@ try {
     writeFileSync(
       join(consumer, 'consumer.ts'),
       [
-        `import { TAG_NAME, isEditableTarget } from '${pkg.name}';`,
+        `import { TAG_NAME, isEditableTarget, mountFieldNotes, type FieldNotesHandle } from '${pkg.name}';`,
         `import { isAllowedOrigin } from '${pkg.name}/sink';`,
         `const tag: string = TAG_NAME;`,
         `const editable: boolean = isEditableTarget(null);`,
+        `const handle: FieldNotesHandle = mountFieldNotes({ enabled: () => false });`,
+        `const opened: Promise<void> = handle.open();`,
         `const allowed: boolean = isAllowedOrigin('http://localhost:1', []);`,
-        `export { tag, editable, allowed };`,
+        `export { tag, editable, allowed, opened };`,
       ].join('\n'),
     );
     writeFileSync(

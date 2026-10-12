@@ -1,1 +1,8 @@
-export { TAG_NAME, isEditableTarget } from '@field-notes/widget';
+export {
+  type Enabled,
+  type FieldNotesHandle,
+  type FieldNotesOptions,
+  TAG_NAME,
+  isEditableTarget,
+  mountFieldNotes,
+} from '@field-notes/widget';

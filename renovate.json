@@ -36,6 +36,11 @@
       "description": "typescript-eslint supports TypeScript < 6.1; lift when it adds support",
       "matchPackageNames": ["typescript"],
       "allowedVersions": "<6.1"
+    },
+    {
+      "description": "lit-v2 is a test fixture: a host page on an older Lit than the widget's",
+      "matchDepNames": ["lit-v2"],
+      "allowedVersions": "<3"
     }
   ]
 }
