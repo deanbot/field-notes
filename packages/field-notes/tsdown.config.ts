@@ -30,6 +30,9 @@ export default defineConfig([
     define: { 'process.env.NODE_ENV': 'process.env.NODE_ENV' },
     // The panel is a lazy chunk: the entry stays an activation stub.
     outputOptions: { chunkFileNames: '[name]-[hash].js' },
+    // Minified so the size budgets measure what a page actually loads;
+    // sourcemaps keep it debuggable.
+    minify: true,
   },
   {
     ...shared,

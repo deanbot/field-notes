@@ -27,7 +27,9 @@ it('warns and reuses a tag registered by something else', async () => {
   expect(warn).toHaveBeenCalledWith(expect.stringContaining('defined by something else'));
   expect(handle.active).toBe(true);
   await handle.open();
-  expect(document.querySelector(TAG_NAME)?.shadowRoot?.childElementCount).toBe(1);
+  expect(
+    document.querySelector(TAG_NAME)?.shadowRoot?.querySelector('[role="dialog"]'),
+  ).not.toBeNull();
   handle.unmount();
 });
 

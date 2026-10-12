@@ -44,7 +44,8 @@ await check('the activation stub has no Lit, Zod, yaml or fflate', () => {
 });
 
 await check('the stub imports no chunk statically, so its size is its own', () => {
-  const statics = stub.match(/^import\b.*$/gm) ?? [];
+  // `from "./x.js"` or a bare `import "./x.js"`, in any quotes, minified or not.
+  const statics = stub.match(/\bfrom\s*["'`]\.\/[^"'`]+|\bimport\s*["'`]\.\/[^"'`]+/g) ?? [];
   assert(statics.length === 0, `static imports: ${statics.join('; ')}`);
 });
 
@@ -54,7 +55,8 @@ await check('the stub leaves process.env.NODE_ENV for the consumer to resolve', 
 
 await check('the panel is a lazy chunk with Lit and without yaml or fflate', () => {
   assert(panelFile, 'no panel chunk');
-  assert(stub.includes(`import("./${panelFile}")`), 'the stub does not lazy-load the panel');
+  const lazy = ['"', "'", '`'].some((q) => stub.includes(`import(${q}./${panelFile}${q})`));
+  assert(lazy, 'the stub does not lazy-load the panel');
   const panel = read(panelFile);
   assert(panel.includes(LIT), 'Lit is not in the panel');
   assert(!YAML.test(panel) && !panel.includes(FFLATE), 'yaml or fflate is in the panel');
