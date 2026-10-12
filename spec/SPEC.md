@@ -13,7 +13,8 @@
 ```
 
 - Every note has its own directory, and there is no shared index file. Writers never touch another note's directory.
-- `<id>` is the note's `id`, and `<slug>` is a short, filesystem-safe summary of the body. Readers must not parse meaning out of the directory name. Read `note.md` instead.
+- `<id>` is the note's `id` with any character outside `A-Z a-z 0-9 _ -` replaced by `_`, and `<slug>` is a short, filesystem-safe summary of the body. Readers must not parse meaning out of the directory name. Read `note.md` instead.
+- Different notes can map to the same directory name: ids that differ only in replaced characters, or only in case on a case-insensitive filesystem. So writers **create a note's directory exclusively and never write into one that already exists**. On a clash, a writer that assigns ids picks a new one; an importer reports the note as a conflict and skips it.
 - An export zip uses the same layout (`items/…`) plus a top-level `index.md` digest. Unzipping it into `.field-notes/` gives the same result as notes written by the sink.
 
 ## `note.md`
