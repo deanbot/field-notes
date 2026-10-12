@@ -15,20 +15,14 @@ export type {
   NoteViewport,
 } from './note.ts';
 
-const MAX_SLUG_LENGTH = 48;
-
-/**
- * Turns free text into a filesystem-safe, human-readable slug used in note
- * directory names (`<id>-<slug>`). Always returns a non-empty string.
- */
-export function slugify(text: string): string {
-  const slug = text
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, MAX_SLUG_LENGTH)
-    .replace(/-+$/, '');
-  return slug || 'note';
-}
+export {
+  NoteParseError,
+  appendToNotes,
+  noteDirName,
+  parseNote,
+  serializeNote,
+  ulid,
+  updateNote,
+} from './note-file.ts';
+export type { NoteParseErrorCode, NotePatch, NoteResult } from './note-file.ts';
+export { slugify } from './slug.ts';
