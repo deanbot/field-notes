@@ -229,6 +229,54 @@ function showToast(target: Hosts, message: string): void {
 
 let sheet: CSSStyleSheet | undefined;
 
+// Repairs for a host's focus trap (focus-trap, modal libraries). The page
+// behind our modal dialog is inert, so a trap can't pull focus back, but it
+// may cancel what it sees in the capture phase. See
+// docs/recipes/host-focus-trap.md for what still needs the host's help.
+
+const FOCUSABLE = 'button, textarea, input, select, [tabindex]';
+
+/** The dialog's Tab stops in order; one per radio group, as the browser does. */
+function tabStops(dialog: HTMLDialogElement, backward: boolean): HTMLElement[] {
+  const all = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (el) => el.tabIndex >= 0 && !el.matches(':disabled') && el.checkVisibility(),
+  );
+  const groups = new Map<string, HTMLInputElement[]>();
+  for (const el of all) {
+    if (el instanceof HTMLInputElement && el.type === 'radio') {
+      groups.set(el.name, [...(groups.get(el.name) ?? []), el]);
+    }
+  }
+  return all.filter((el) => {
+    if (!(el instanceof HTMLInputElement) || el.type !== 'radio') return true;
+    const group = groups.get(el.name) ?? [];
+    const stop = group.find((radio) => radio.checked) ?? (backward ? group.at(-1) : group[0]);
+    return el === stop;
+  });
+}
+
+/**
+ * Tab that a host trap cancelled (it saw focus outside its container) moves
+ * focus here instead, wrapping within the dialog. Native Tab is left alone.
+ */
+function repairTab(event: KeyboardEvent, dialog: HTMLDialogElement, root: ShadowRoot): void {
+  if (event.key !== 'Tab' || !event.defaultPrevented) return;
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  const stops = tabStops(dialog, event.shiftKey);
+  if (!stops.length) return;
+  const at = stops.indexOf(root.activeElement as HTMLElement);
+  const step = event.shiftKey ? -1 : 1;
+  const next = at < 0 ? (event.shiftKey ? stops.length - 1 : 0) : at + step;
+  stops.at(next % stops.length)?.focus();
+}
+
+/** A click whose focus a host trap cancelled still focuses the control. */
+function repairPointerFocus(event: MouseEvent): void {
+  if (!event.defaultPrevented) return;
+  const control = (event.target as Element).closest<HTMLElement>('textarea, input, select, button');
+  if (control && !control.matches(':disabled')) control.focus();
+}
+
 /** Popover placement: beside the button's corner, clear of the button. */
 function anchorTo(
   dialog: HTMLDialogElement,
@@ -322,8 +370,12 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
         @close=${onClose}
         @click=${onClick}
         @keydown=${(event: KeyboardEvent) => {
+          // Esc closes this dialog (natively); it isn't the host's Esc.
+          if (event.key === 'Escape') event.stopPropagation();
+          repairTab(event, event.currentTarget as HTMLDialogElement, root);
           if (mode === 'form') form.keydown(event);
         }}
+        @mousedown=${repairPointerFocus}
       >
         <header>
           <h2 id="field-notes-title">Field notes</h2>

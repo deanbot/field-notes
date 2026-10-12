@@ -50,6 +50,13 @@ export interface FieldNotesOptions {
    * unhandled rejections) and attach them to each note. `true` keeps 20.
    */
   consoleErrors?: boolean | number | undefined;
+  /**
+   * Called right before a surface opens. A host with its own focus trap (a
+   * modal library) can pause it here; see docs/recipes/host-focus-trap.md.
+   */
+  onOpen?: (() => void) | undefined;
+  /** Called once after each surface closes, whatever closed it. Unpause here. */
+  onClose?: (() => void) | undefined;
 }
 
 export interface FieldNotesHandle {
@@ -93,6 +100,15 @@ const warn = (message: string): void => {
   console.warn(`[field-notes] ${message}`);
 };
 
+/** Calls a host hook; one that throws can't stop the widget opening or closing. */
+const hook = (fn: (() => void) | undefined): void => {
+  try {
+    fn?.();
+  } catch (error) {
+    warn(`a hook threw. ${String(error)}`);
+  }
+};
+
 /**
  * Adds the widget to the page. Nothing renders until it's opened, and the
  * panel code isn't loaded until then either.
@@ -107,7 +123,11 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
 
   const mounted = findMount();
   if (mounted) {
-    warn('already mounted; reusing the existing widget.');
+    warn(
+      options.onOpen || options.onClose
+        ? 'already mounted; reusing it. Its onOpen/onClose stay; these are ignored.'
+        : 'already mounted; reusing the existing widget.',
+    );
     return mounted;
   }
 
@@ -195,6 +215,7 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
       }
       if (!stillWanted()) return;
       shown = panel;
+      hook(options.onOpen);
       panel.showPanel(root, {
         surface,
         anchor: button && { rect: button.getBoundingClientRect(), corner },
@@ -212,8 +233,12 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
     },
     close: () => {
       wanted = false;
-      shown?.hidePanel(root);
-      shown = undefined;
+      if (shown) {
+        shown.hidePanel(root);
+        shown = undefined;
+        // Every close path ends here: once per onOpen.
+        hook(options.onClose);
+      }
       expanded(false);
     },
     toggle: () => {
