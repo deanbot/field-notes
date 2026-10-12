@@ -148,9 +148,12 @@ describe('parseNote errors', () => {
     }
   });
 
-  it('does not pollute prototypes', () => {
-    const text = `---\n__proto__: { polluted: true }\nid: x\nschema: 1\nstatus: open\ncreated: 2026-10-09T18:42:11Z\n---\n`;
-    parseNote(text);
+  it('ignores __proto__ keys without polluting anything', () => {
+    const text = `---\n__proto__: { polluted: true, status: resolved }\nid: x\nschema: 1\nstatus: open\ncreated: 2026-10-09T18:42:11Z\n---\n`;
+    const note = value(parseNote(text));
+    expect(Object.getPrototypeOf(note)).toBe(Object.prototype);
+    expect('polluted' in note).toBe(false);
+    expect(note.status).toBe('open');
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
