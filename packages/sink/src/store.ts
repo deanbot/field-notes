@@ -132,21 +132,22 @@ export function createStore(root: string, options: StoreOptions): Store {
    * fails if the record exists, so a second process can't overwrite it.
    */
   const record = async (file: string, receipt: Receipt): Promise<Receipt> => {
-    await mkdir(keys, { recursive: true });
     const temp = `${file}.${randomUUID()}.tmp`;
-    await writeFile(temp, JSON.stringify(receipt), { flag: 'wx' });
     try {
+      await mkdir(keys, { recursive: true });
+      await writeFile(temp, JSON.stringify(receipt), { flag: 'wx' });
       await link(temp, file);
       return receipt;
     } catch (error) {
-      if (!hasCode(error, 'EEXIST')) throw error;
-      // Another process stored the same note first: keep theirs.
+      // This copy of the note goes either way: a failure must mean nothing
+      // was stored (or every retry would store it again), and on EEXIST
+      // another process stored the same note first, so keep theirs.
       await rm(join(root, receipt.dir), { recursive: true, force: true });
-      const first = await recorded(file);
+      const first = hasCode(error, 'EEXIST') ? await recorded(file) : undefined;
       if (!first) throw error;
       return first;
     } finally {
-      await unlink(temp);
+      await unlink(temp).catch(() => undefined);
     }
   };
 

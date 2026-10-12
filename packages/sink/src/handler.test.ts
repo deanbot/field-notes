@@ -2,7 +2,7 @@
 import * as fs from 'node:fs/promises';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { type Server, createServer, request } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { type AddressInfo, connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as core from '@field-notes/core';
@@ -12,7 +12,7 @@ import { type SinkOptions, TOKEN_HEADER, createSinkHandler } from './handler.ts'
 
 vi.mock('node:fs/promises', async (original) => {
   const actual = await original<typeof fs>();
-  return { ...actual, rename: vi.fn(actual.rename) };
+  return { ...actual, rename: vi.fn(actual.rename), link: vi.fn(actual.link) };
 });
 vi.mock('@field-notes/core', async (original) => {
   const actual = await original<typeof core>();
@@ -39,6 +39,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.mocked(core.ulid).mockReset();
   vi.mocked(fs.rename).mockReset();
+  vi.mocked(fs.link).mockReset();
 });
 
 function stop(running: Server | undefined): Promise<void> {
@@ -364,6 +365,20 @@ describe('idempotency', () => {
     expect((await post(payload({ clientId: 'first' }))).status).toBe(500);
   });
 
+  it('stores nothing when the clientId record fails, so a retry stores the note once', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await start();
+    // A filesystem without hard links.
+    vi.mocked(fs.link).mockRejectedValueOnce(
+      Object.assign(new Error('no links'), { code: 'EPERM' }),
+    );
+    expect((await post(payload({ clientId: 'unrecorded' }))).status).toBe(500);
+    expect(await items()).toEqual([]);
+    expect(await readdir(join(dir, '.sink', 'keys'))).toEqual([]);
+    expect((await post(payload({ clientId: 'unrecorded' }))).status).toBe(201);
+    expect(await items()).toHaveLength(1);
+  });
+
   it('never uses the clientId as a path', async () => {
     await start();
     const { status } = await post(payload({ clientId: '../../escaped' }));
@@ -461,6 +476,25 @@ describe('refusing requests', () => {
     expect(await (await fetch(`${base}/with-next`)).text()).toBe('next');
     expect(next).toHaveBeenCalledOnce();
     expect((await fetch(`${base}/elsewhere`)).status).toBe(404);
+  });
+
+  it('survives a malformed request URL', async () => {
+    await start();
+    const port = new URL(base).port;
+    const answer = await new Promise<string>((done, fail) => {
+      const socket = connect(Number(port), '127.0.0.1', () => {
+        socket.end('GET http://[ HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n');
+      });
+      let text = '';
+      socket.on('data', (chunk: Buffer) => (text += chunk.toString()));
+      socket.on('end', () => {
+        done(text);
+      });
+      socket.on('error', fail);
+    });
+    expect(answer).toMatch(/^HTTP\/1\.1 404/);
+    // Still serving.
+    expect((await post(payload())).status).toBe(201);
   });
 
   it('takes notes at a configured path, with a query string', async () => {

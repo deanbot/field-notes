@@ -238,8 +238,10 @@ export function createSinkHandler(options: SinkOptions): SinkHandler {
   };
 
   return (req, res, next) => {
-    const url = new URL(req.url ?? '/', 'http://sink');
-    if (url.pathname !== path) {
+    // URL.parse, not new URL: a malformed request line must not throw here,
+    // where nothing would catch it.
+    const url = URL.parse(req.url ?? '/', 'http://sink');
+    if (url?.pathname !== path) {
       if (next) next();
       else reply(res, 404, { error: 'not-found', message: 'not found' });
       return;
