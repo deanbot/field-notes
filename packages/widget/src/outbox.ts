@@ -25,6 +25,22 @@ export interface OutboxEntry {
   readonly lastError?: string | undefined;
   /** Set when a transport rejected it for good; flush() skips it. */
   readonly rejected?: boolean | undefined;
+  /**
+   * When a flush started sending it (ms). Edits and deletes are refused
+   * meanwhile: the transport would store the old text. See `SEND_LEASE_MS`.
+   */
+  readonly sending?: number | undefined;
+}
+
+/**
+ * How long a send may hold a note. A mark older than this is treated as
+ * clear, so a tab that closed or crashed mid-send can't lock the note.
+ */
+export const SEND_LEASE_MS = 60_000;
+
+/** Whether a flush, in this tab or another, is sending the entry now. */
+export function isSending(entry: Pick<OutboxEntry, 'sending'>): boolean {
+  return entry.sending !== undefined && Date.now() - entry.sending < SEND_LEASE_MS;
 }
 
 /** What the drawer may change. */
@@ -214,6 +230,10 @@ export function createOutbox(
           reason = `already ${entry.state}`;
           return undefined;
         }
+        if (isSending(entry)) {
+          reason = 'being sent';
+          return undefined;
+        }
         const note: Note = { ...entry.note, body: edit.body };
         if (edit.type) note.type = edit.type;
         else delete note.type;
@@ -226,31 +246,46 @@ export function createOutbox(
 
     remove: async (id) => {
       const tx = (await db()).transaction('entries', 'readwrite');
-      await Promise.all([tx.store.delete(id), tx.done]);
+      const [busy] = await Promise.all([
+        tx.store.get(id).then(async (entry) => {
+          // The transport would still store it: refuse rather than pretend.
+          if (entry && isSending(entry)) return true;
+          await tx.store.delete(id);
+          return false;
+        }),
+        tx.done,
+      ]);
+      if (busy) throw new Error(`can't delete note ${id}: being sent`);
       await committed();
     },
 
     flush: async (send) => {
       let delivered = 0;
       let rejected = 0;
-      for (const entry of await list()) {
-        if (entry.state !== 'pending' || entry.rejected) continue;
+      for (const { id } of await list()) {
+        // Claim it in the transaction that reads it, so neither another tab's
+        // flush nor an edit can touch it until the send settles.
+        const claimed = await update(id, (current) =>
+          current.state === 'pending' && !current.rejected && !isSending(current)
+            ? { ...current, sending: Date.now() }
+            : undefined,
+        );
+        if (!claimed) continue;
+        const { note, attachments } = fromStored(claimed);
+        const settle = (change: Partial<StoredEntry>): Promise<unknown> =>
+          update(id, ({ sending: _done, ...current }) => ({ ...current, ...change }));
         try {
-          const receipt = await send(entry.note, entry.attachments);
-          // Removed or changed meanwhile? Then leave it as it is.
-          await update(entry.id, (current) =>
-            current.state === 'pending' ? { ...current, state: 'delivered', receipt } : undefined,
-          );
+          const receipt = await send(note, attachments);
+          await settle({ state: 'delivered', receipt });
           delivered++;
         } catch (error) {
           const retryable = !(error instanceof TransportError) || error.retryable;
           const lastError = error instanceof Error ? error.message : String(error);
-          await update(entry.id, (current) => ({
-            ...current,
-            attempts: current.attempts + 1,
+          await settle({
+            attempts: claimed.attempts + 1,
             lastError,
             ...(retryable ? {} : { rejected: true }),
-          }));
+          });
           if (retryable) {
             await committed();
             return { delivered, rejected, stopped: true };

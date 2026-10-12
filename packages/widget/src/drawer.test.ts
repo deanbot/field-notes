@@ -262,6 +262,28 @@ describe('My notes', () => {
     expect(query('.entry button')).toBeNull();
   });
 
+  it('shows a note being sent, with nothing to edit', async () => {
+    mount();
+    await submit('in flight');
+    let release: () => void = () => undefined;
+    const sending = outbox().flush(
+      () =>
+        new Promise((resolve) => {
+          release = () => {
+            resolve({ id: 'r' });
+          };
+        }),
+    );
+    await vi.waitFor(async () => {
+      expect((await outbox().list())[0]?.sending).toBeDefined();
+    });
+    await openNotes();
+    expect(query('.entry .meta')?.textContent).toContain('Sending…');
+    expect(query('.entry button')).toBeNull();
+    release();
+    await sending;
+  });
+
   it("doesn't submit the hidden form with Ctrl+Enter", async () => {
     mount();
     await handle?.open();

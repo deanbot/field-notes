@@ -3,7 +3,7 @@ import { type Note, NoteSchema } from '@field-notes/core/note';
 import { openDB } from 'idb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeTransport } from './fake-transport.ts';
-import { DB_NAME, type Outbox, createOutbox } from './outbox.ts';
+import { DB_NAME, type Outbox, SEND_LEASE_MS, createOutbox } from './outbox.ts';
 import type * as OutboxModule from './outbox.ts';
 import { TransportError } from './transport.ts';
 
@@ -269,16 +269,94 @@ describe('outbox flush', () => {
     });
     expect(await outbox.flush(picky)).toEqual({ delivered: 0, rejected: 0, stopped: false });
   });
+});
 
-  it('leaves a note removed while it was being sent', async () => {
-    const outbox = open();
-    const racing = note();
-    await outbox.add(racing);
-    const result = await outbox.flush(async (n) => {
-      await outbox.remove(n.id);
-      return { id: 'r' };
+describe('a note being sent', () => {
+  /** A transport that waits until released. */
+  function held(): {
+    send: Parameters<Outbox['flush']>[0];
+    release: () => void;
+    calls: () => number;
+  } {
+    let calls = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
     });
-    expect(result.delivered).toBe(1);
-    expect(await outbox.list()).toEqual([]);
+    return {
+      send: async () => {
+        calls++;
+        await gate;
+        return { id: 'r' };
+      },
+      release: () => {
+        release();
+      },
+      calls: () => calls,
+    };
+  }
+
+  it('refuses an edit or delete until the send settles', async () => {
+    const outbox = open();
+    const sending = note('original');
+    await outbox.add(sending);
+    const transport = held();
+    const flushing = outbox.flush(transport.send);
+    await vi.waitFor(() => {
+      expect(transport.calls()).toBe(1);
+    });
+    expect((await outbox.list())[0]?.sending).toEqual(expect.any(Number));
+    await expect(outbox.edit(sending.id, { body: 'edited' })).rejects.toThrow('being sent');
+    await expect(outbox.remove(sending.id)).rejects.toThrow('being sent');
+    transport.release();
+    await flushing;
+    const [entry] = await outbox.list();
+    expect(entry).toMatchObject({ state: 'delivered', note: { body: 'original' } });
+    expect(entry?.sending).toBeUndefined();
+  });
+
+  it('clears the mark when the send fails, so the note can be edited again', async () => {
+    const outbox = open();
+    const failing = note('first try');
+    await outbox.add(failing);
+    await outbox.flush(() => Promise.reject(new TransportError('sink down', { retryable: true })));
+    const [entry] = await outbox.list();
+    expect(entry?.sending).toBeUndefined();
+    await expect(outbox.edit(failing.id, { body: 'edited' })).resolves.toMatchObject({
+      note: { body: 'edited' },
+    });
+  });
+
+  it('is sent by only one of two outboxes flushing at once (two tabs)', async () => {
+    const first = open();
+    const second = open();
+    await first.add(note());
+    const transport = held();
+    const flushes = [first.flush(transport.send), second.flush(transport.send)];
+    await vi.waitFor(() => {
+      expect(transport.calls()).toBe(1);
+    });
+    transport.release();
+    const results = await Promise.all(flushes);
+    expect(transport.calls()).toBe(1);
+    expect(results.map((r) => r.delivered).sort()).toEqual([0, 1]);
+  });
+
+  it('treats a stale mark as clear, so a crashed tab cannot lock a note', async () => {
+    const outbox = open();
+    const stuck = note('stuck');
+    await outbox.add(stuck);
+    const crashed = held();
+    void outbox.flush(crashed.send);
+    await vi.waitFor(() => {
+      expect(crashed.calls()).toBe(1);
+    });
+    const later = Date.now() + SEND_LEASE_MS + 1;
+    vi.spyOn(Date, 'now').mockReturnValue(later);
+    await expect(outbox.edit(stuck.id, { body: 'unstuck' })).resolves.toMatchObject({
+      note: { body: 'unstuck' },
+    });
+    const retry = fakeTransport();
+    expect(await outbox.flush(retry.transport)).toMatchObject({ delivered: 1 });
   });
 });

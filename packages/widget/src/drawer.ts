@@ -1,7 +1,7 @@
 // "My notes": the notes in this browser's outbox. Part of the panel chunk.
 // Pending notes can be edited or deleted; delivered ones are listed as sent.
 import { html, type TemplateResult } from 'lit/html.js';
-import type { Outbox, OutboxEntry } from './outbox.ts';
+import { type Outbox, type OutboxEntry, isSending } from './outbox.ts';
 
 export interface DrawerDeps {
   readonly outbox: Outbox;
@@ -30,6 +30,7 @@ const firstLine = (body: string): string =>
 function status(entry: OutboxEntry): string {
   if (entry.state === 'delivered') return 'Delivered';
   if (entry.state === 'exported') return 'Exported';
+  if (isSending(entry)) return 'Sending…';
   if (entry.rejected) return `Rejected: ${entry.lastError ?? 'unknown error'}`;
   return entry.lastError ? `Not sent yet (${entry.lastError})` : 'Not sent yet';
 }
@@ -123,7 +124,8 @@ export function createDrawer(deps: DrawerDeps): Drawer {
         </div>
       </li>`;
     }
-    const pending = entry.state === 'pending';
+    // While it's being sent, the transport has the text as it was.
+    const pending = entry.state === 'pending' && !isSending(entry);
     return html`<li class="entry">
       <p class="summary">${firstLine(entry.note.body)}</p>
       <p class="meta">
