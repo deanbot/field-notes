@@ -229,15 +229,18 @@ describe('a sink on the page origin (the Vite plugin, the middleware)', () => {
    */
   async function sameOriginSink(
     tokens: string[],
-  ): Promise<{ gets: () => number; posts: () => number }> {
+  ): Promise<{ gets: () => number; posts: () => number; down: (value: boolean) => void }> {
     const { endpoint } = await startSink();
     const real = window.fetch.bind(window);
     let gets = 0;
     let posts = 0;
+    let down = false;
     vi.spyOn(window, 'fetch').mockImplementation((input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input), location.href);
       if (url.origin !== location.origin || url.pathname !== '/__field-notes')
         return real(input, init);
+      // The dev server is restarting: nothing answers.
+      if (down) return Promise.reject(new TypeError('Failed to fetch'));
       if ((init?.method ?? 'GET') === 'GET') {
         const token = tokens[Math.min(gets++, tokens.length - 1)];
         return Promise.resolve(Response.json({ token }));
@@ -245,7 +248,13 @@ describe('a sink on the page origin (the Vite plugin, the middleware)', () => {
       posts++;
       return real(endpoint, init);
     });
-    return { gets: () => gets, posts: () => posts };
+    return {
+      gets: () => gets,
+      posts: () => posts,
+      down: (value) => {
+        down = value;
+      },
+    };
   }
 
   it('asks it for the token, so the widget needs no options', async () => {
@@ -274,6 +283,22 @@ describe('a sink on the page origin (the Vite plugin, the middleware)', () => {
     );
     expect(sink.gets()).toBe(2);
     expect(sink.posts()).toBe(2);
+  });
+
+  it('retries on its own when the dev server was down as the note was added', async () => {
+    const sink = await sameOriginSink(['test-sink-token']);
+    sink.down(true);
+    handle = mountFieldNotes({ enabled: true });
+    await submit('while restarting');
+    await new Promise((done) => setTimeout(done, 300));
+    sink.down(false);
+    // No new note, no online or visibility event: the backoff alone sends it.
+    await vi.waitFor(
+      async () => {
+        expect(await bodies()).toEqual(['while restarting']);
+      },
+      { timeout: 5000 },
+    );
   });
 
   it('sends nothing, and counts no failure, when nothing there hands out a token', async () => {

@@ -27,6 +27,8 @@ export const RETRY_MAX_MS = 60_000;
 /** How long delivered notes stay listed in "My notes". */
 export const DELIVERED_RETENTION_MS: number = 7 * 24 * 60 * 60 * 1000;
 
+const UNREACHABLE = Symbol('unreachable');
+
 /** Sets delivery up; the first `kick()` sends. */
 export function startSync(options: SyncOptions): Sync {
   const { signal } = options;
@@ -40,10 +42,16 @@ export function startSync(options: SyncOptions): Sync {
    * without the plugin) means there's no sink: nothing is sent, and the
    * next kick asks again.
    */
-  const findToken = async (): Promise<string | undefined> => {
+  const findToken = async (): Promise<string | typeof UNREACHABLE | undefined> => {
     if (options.token || endpoint.origin !== location.origin) return options.token;
+    let res: Response;
     try {
-      const res = await fetch(endpoint, { cache: 'no-store', signal });
+      res = await fetch(endpoint, { cache: 'no-store', signal });
+    } catch {
+      // The dev server is down (restarting): try again later, as for a send.
+      return UNREACHABLE;
+    }
+    try {
       const body: unknown = res.headers.get('content-type')?.includes('json') && (await res.json());
       const found = (body as { token?: unknown } | undefined)?.token;
       return typeof found === 'string' ? found : undefined;
@@ -52,9 +60,10 @@ export function startSync(options: SyncOptions): Sync {
     }
   };
 
-  const sender = async (): Promise<Transport | undefined> => {
+  const sender = async (): Promise<Transport | typeof UNREACHABLE | undefined> => {
     if (transport) return transport;
     const found = await findToken();
+    if (found === UNREACHABLE) return found;
     if (!found) return undefined;
     const send = createLocalTransport({ endpoint: endpoint.href, token: found, signal });
     transport = async (note, attachments) => {
@@ -89,6 +98,10 @@ export function startSync(options: SyncOptions): Sync {
       do {
         again = false;
         const send = await sender();
+        if (send === UNREACHABLE) {
+          if (!signal.aborted) retryLater();
+          return;
+        }
         if (!send) return;
         if ((await outbox.flush(send)).stopped) {
           retryLater();

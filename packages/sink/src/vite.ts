@@ -34,7 +34,9 @@ export interface FieldNotesVitePlugin {
 
 /**
  * Takes notes at `/__field-notes` on the dev server. A widget on the dev
- * server's pages gets the token from there, so it needs no options.
+ * server's pages gets the token from there, so it needs no options, as long
+ * as the page is opened on this machine. A page on another device (`vite
+ * --host`) needs `token` given, and its origin in `origins`.
  */
 export function fieldNotes(options: FieldNotesViteOptions = {}): FieldNotesVitePlugin {
   return {

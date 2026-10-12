@@ -92,6 +92,13 @@ class RequestError extends Error {
   }
 }
 
+/** Whether a peer address is this machine: 127.0.0.0/8 or ::1, IPv4-mapped too. */
+function isLoopback(address: string | undefined): boolean {
+  if (!address) return false;
+  const v4 = address.startsWith('::ffff:') ? address.slice(7) : address;
+  return v4.startsWith('127.') || address === '::1';
+}
+
 const digest = (text: string): Buffer => createHash('sha256').update(text).digest();
 
 /** `git config user.name`, or undefined if there's no git or no name. */
@@ -254,9 +261,11 @@ export function createSinkHandler(options: SinkOptions): SinkHandler {
     }
     // Before the origin check: browsers send no Origin on a same-origin GET.
     // `Sec-Fetch-Site` is set by the browser, and no CORS headers go out,
-    // so no other site's page can read the answer.
+    // so no other site's page can read the answer. Only to this machine:
+    // a dev server listening on the network (`vite --host`, Express's
+    // default) must not hand the token to any client that forges the header.
     if (options.tokenToSameOrigin && req.method === 'GET') {
-      if (req.headers['sec-fetch-site'] === 'same-origin') {
+      if (req.headers['sec-fetch-site'] === 'same-origin' && isLoopback(req.socket.remoteAddress)) {
         res.setHeader('Cache-Control', 'no-store');
         reply(res, 200, { token: options.token });
       } else {

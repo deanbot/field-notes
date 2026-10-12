@@ -17,7 +17,8 @@ export interface FieldNotesMiddlewareOptions {
 /**
  * Takes notes at `/__field-notes`; other requests go to `next`. Mount it
  * before body parsers. A widget on the server's own pages gets the token
- * from there, so it needs no options.
+ * from there, so it needs no options, when the page is opened on this
+ * machine; a page on another device needs `token` given, and `origins`.
  *
  * With `NODE_ENV=production` (and no `force`) it creates nothing, warns once
  * and passes every request on, so a forgotten dev-only guard can't open a
