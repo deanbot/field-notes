@@ -30,6 +30,17 @@ const inactive: FieldNotesHandle = Object.freeze({
 // that match `<field-notes>` from outside, such as `* { color: red }`.
 const SHELL_CSS = ':host { all: initial !important; }';
 
+/**
+ * The live mount on the page, from any copy of the widget. It looks past
+ * other `<field-notes>` elements, such as one from a stranger's registration.
+ */
+export function findMount(): FieldNotesHandle | undefined {
+  for (const el of document.querySelectorAll<Shell>(TAG_NAME)) {
+    if (el[HANDLE_KEY]?.active) return el[HANDLE_KEY];
+  }
+  return undefined;
+}
+
 const warn = (message: string): void => {
   console.warn(`[field-notes] ${message}`);
 };
@@ -46,8 +57,8 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
   if (typeof document === 'undefined' || typeof customElements === 'undefined') return inactive;
   if (!isEnabled(options.enabled ?? 'auto')) return inactive;
 
-  const mounted = document.querySelector<Shell>(TAG_NAME)?.[HANDLE_KEY];
-  if (mounted?.active) {
+  const mounted = findMount();
+  if (mounted) {
     warn('already mounted; reusing the existing widget.');
     return mounted;
   }

@@ -1,8 +1,17 @@
-import { type FieldNotesHandle, type FieldNotesOptions, mountFieldNotes } from './mount.ts';
+import {
+  type FieldNotesHandle,
+  type FieldNotesOptions,
+  findMount,
+  mountFieldNotes,
+} from './mount.ts';
 
-/** `window.FieldNotes` in the script-tag build. */
+/**
+ * `window.FieldNotes` in the script-tag build. When the page has already
+ * mounted the widget (an npm import), it shares that mount: `open()` and
+ * `close()` drive it, but `mount()` and `unmount()` never tear it down.
+ */
 export interface ScriptApi {
-  /** Mounts the widget, replacing the current mount. Defaults to the tag's `data-*` options. */
+  /** Mounts the widget, replacing this tag's own mount. Defaults to the tag's `data-*` options. */
   readonly mount: (options?: FieldNotesOptions) => FieldNotesHandle;
   readonly open: () => Promise<void>;
   readonly close: () => void;
@@ -21,20 +30,23 @@ export function scriptOptions(script: HTMLOrSVGScriptElement | null): FieldNotes
 export function startScriptTag(script: HTMLOrSVGScriptElement | null): ScriptApi {
   const defaults = scriptOptions(script);
   let handle: FieldNotesHandle | undefined;
+  let owned = false; // false when `handle` is a mount the page made
   // Cancels the mount that waits for the document, once any call overrides it.
   const pending = new AbortController();
   const api: ScriptApi = {
     mount: (options = defaults) => {
       pending.abort();
-      handle?.unmount();
+      if (owned) handle?.unmount();
+      const existing = findMount();
       handle = mountFieldNotes(options);
+      owned = handle !== existing;
       return handle;
     },
     open: () => handle?.open() ?? Promise.resolve(),
     close: () => handle?.close(),
     unmount: () => {
       pending.abort();
-      handle?.unmount();
+      if (owned) handle?.unmount();
     },
   };
   // A script tag in <head> runs before <body> exists.

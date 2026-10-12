@@ -38,3 +38,13 @@ it("stays off, without throwing, when that element's shadow root is taken", () =
   expect(handle.active).toBe(false);
   expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("can't attach"));
 });
+
+it("finds the widget's mount behind a host's own <field-notes>", () => {
+  claimShadow = false;
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  document.body.append(document.createElement(TAG_NAME));
+  const first = mountFieldNotes({ enabled: true });
+  expect(mountFieldNotes({ enabled: true })).toBe(first);
+  expect(document.querySelectorAll(TAG_NAME)).toHaveLength(2);
+  first.unmount();
+});

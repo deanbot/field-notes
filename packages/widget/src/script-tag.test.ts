@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TAG_NAME } from './element.ts';
+import { mountFieldNotes } from './mount.ts';
 import { type ScriptApi, scriptOptions, startScriptTag } from './script-tag.ts';
 
 function tag(attrs: Record<string, string> = {}): HTMLScriptElement {
@@ -81,6 +82,19 @@ describe('startScriptTag', () => {
     const all = document.querySelectorAll(TAG_NAME);
     expect(all).toHaveLength(1);
     expect(all[0]).toBe(mounted);
+  });
+
+  it("leaves the app's own mount alone when it reused it", () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const app = mountFieldNotes({ enabled: true });
+    const el = document.querySelector(TAG_NAME);
+    api = startScriptTag(tag());
+    api.unmount();
+    expect(app.active).toBe(true);
+    api.mount();
+    expect(app.active).toBe(true);
+    expect(document.querySelector(TAG_NAME)).toBe(el);
+    app.unmount();
   });
 
   it('is a no-op API before anything mounts', async () => {

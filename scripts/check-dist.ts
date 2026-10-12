@@ -145,7 +145,9 @@ await check('script tag and npm import on one page share a single widget', async
     });
     assert(errors.length === 0, `page errors: ${errors.join('; ')}`);
     assert(state.count === 1, `expected one <field-notes>, got ${String(state.count)}`);
-    assert(state.shared, 'the npm import did not reuse the script-tag mount');
+    // The module script runs before DOMContentLoaded, when the script tag
+    // mounts, so here the script tag is the one that reuses.
+    assert(state.shared, 'the script tag did not reuse the npm mount');
     assert(
       warnings.some((text) => text.includes('already mounted')),
       'no double-mount warning',
@@ -162,6 +164,13 @@ await check('script tag and npm import on one page share a single widget', async
           .length,
     );
     assert(dialogs === 1, `expected one open panel, got ${String(dialogs)}`);
+
+    const survives = await page.evaluate(() => {
+      const w = window as { esm?: { active: boolean }; FieldNotes?: { unmount(): void } };
+      w.FieldNotes?.unmount();
+      return w.esm?.active;
+    });
+    assert(survives === true, "window.FieldNotes.unmount() tore down the page's own mount");
   } finally {
     await browser.close();
   }
