@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@field-notes/core": "workspace:*",
     "lit": "3.3.3"
   },
   "devDependencies": {

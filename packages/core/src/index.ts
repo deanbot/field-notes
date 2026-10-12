@@ -21,11 +21,11 @@ export {
   noteDirName,
   parseNote,
   serializeNote,
-  ulid,
   updateNote,
 } from './note-file.ts';
 export type { NoteParseErrorCode, NotePatch, NoteResult } from './note-file.ts';
 export { slugify } from './slug.ts';
+export { ulid } from './id.ts';
 export { BundleError, readBundle, writeBundle } from './bundle.ts';
 export type {
   BundleErrorCode,

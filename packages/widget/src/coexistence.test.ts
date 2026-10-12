@@ -20,13 +20,15 @@ function shadow(): ShadowRoot {
   return root;
 }
 
-it('adds no globals beyond Lit’s version list', async () => {
+it('adds no globals beyond the ones Lit and Zod share across copies', async () => {
   const before = new Set(Object.getOwnPropertyNames(globalThis));
   handle = mountFieldNotes({ enabled: true });
   await handle.open();
   handle.unmount();
   const added = Object.getOwnPropertyNames(globalThis).filter((name) => !before.has(name));
-  expect(added.filter((name) => name !== 'litHtmlVersions')).toEqual([]);
+  // Documented in PLAN.md (Coexisting with the host app).
+  const shared = ['litHtmlVersions', '__zod_globalConfig', '__zod_globalRegistry'];
+  expect(added.filter((name) => !shared.includes(name))).toEqual([]);
 });
 
 it('runs beside a host on a different Lit version', async () => {

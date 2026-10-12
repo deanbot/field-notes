@@ -1,8 +1,10 @@
 import { type Enabled, isEnabled } from './activation.ts';
 import { BUTTON_CSS, type Corner, type Offset, createButton } from './button.ts';
+import { deliver } from './deliver.ts';
 import { HANDLE_KEY, TAG_NAME, defineShell } from './element.ts';
 import { matchesHotkey, parseHotkey } from './hotkey.ts';
 import { isEditableTarget } from './keyboard.ts';
+import type * as ConsoleModule from './console-errors.ts';
 import type * as PanelModule from './panel.ts';
 import type { Surface } from './panel.ts';
 
@@ -31,6 +33,23 @@ export interface FieldNotesOptions {
    * US-layout position.
    */
   hotkey?: string | undefined;
+  /** Note types offered as one-click chips. Default `['bug', 'change', 'idea', 'question']`. */
+  types?: readonly string[] | undefined;
+  /** Recorded on each note. Default `'local'`. */
+  environment?: string | undefined;
+  /** Recorded on each note when set. */
+  author?: string | (() => string) | undefined;
+  /**
+   * Extra data for each note: app version, feature flags, store state…
+   * Called when the widget opens; it must return (or resolve to) plain data.
+   * If it throws, rejects or takes over a second, the note goes without it.
+   */
+  context?: (() => unknown) | undefined;
+  /**
+   * Opt-in: keep the page's last errors (`console.error`, uncaught errors and
+   * unhandled rejections) and attach them to each note. `true` keeps 20.
+   */
+  consoleErrors?: boolean | number | undefined;
 }
 
 export interface FieldNotesHandle {
@@ -124,6 +143,23 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
     button?.setAttribute('aria-expanded', String(open));
   };
 
+  // Opt-in, so its code loads only when asked for. It's installed once
+  // loaded, unless unmount() ran in the meantime.
+  let errors: ConsoleModule.ConsoleErrors | undefined;
+  const { consoleErrors } = options;
+  if (consoleErrors) {
+    import('./console-errors.ts').then(
+      (mod) => {
+        if (!signal.aborted) {
+          errors = mod.captureConsoleErrors(consoleErrors === true ? 20 : consoleErrors, signal);
+        }
+      },
+      (error: unknown) => {
+        warn(`couldn't load console capture. ${String(error)}`);
+      },
+    );
+  }
+
   type Panel = typeof PanelModule;
   let alive = true;
   let wanted = false; // the last call was open(), not close()
@@ -141,6 +177,8 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
       if (!alive) return;
       wanted = true;
       if (shown) return;
+      // Before anything takes focus, which can clear the page's selection.
+      const selection = getSelection()?.toString();
       loading ??= import('./panel.ts');
       let panel: Panel;
       try {
@@ -156,6 +194,11 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
       panel.showPanel(root, {
         surface,
         anchor: button && { rect: button.getBoundingClientRect(), corner },
+        options,
+        selection,
+        consoleErrors: () => errors?.snapshot(),
+        deliver,
+        signal,
         close: handle.close,
       });
       expanded(true);
