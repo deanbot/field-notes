@@ -18,12 +18,14 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           include: ['packages/{core,sink,cli}/src/**/*.test.ts'],
+          exclude: ['**/*.browser.test.ts'],
         },
       },
       {
         test: {
           name: 'browser',
-          include: ['packages/widget/src/**/*.test.ts'],
+          // core is isomorphic: its *.browser.test.ts files prove it runs without Node.
+          include: ['packages/widget/src/**/*.test.ts', 'packages/core/src/**/*.browser.test.ts'],
           browser: {
             enabled: true,
             headless: true,

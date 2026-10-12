@@ -26,3 +26,11 @@ export {
 } from './note-file.ts';
 export type { NoteParseErrorCode, NotePatch, NoteResult } from './note-file.ts';
 export { slugify } from './slug.ts';
+export { BundleError, readBundle, writeBundle } from './bundle.ts';
+export type {
+  BundleErrorCode,
+  BundleItem,
+  BundleResult,
+  ReadBundleOptions,
+  WriteBundleOptions,
+} from './bundle.ts';
