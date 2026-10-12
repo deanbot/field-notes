@@ -25,6 +25,28 @@ export default defineConfig([
     entry: { index: 'src/index.ts' },
     platform: 'browser',
     target: 'es2022',
+    // Rolldown's browser platform would fill this in now; leave it for the
+    // consumer's bundler, which knows whether it's making a production build.
+    define: { 'process.env.NODE_ENV': 'process.env.NODE_ENV' },
+    // The panel is a lazy chunk: the entry stays an activation stub.
+    outputOptions: { chunkFileNames: '[name]-[hash].js' },
+  },
+  {
+    ...shared,
+    // Self-contained script for a <script> tag, served by the local sink.
+    // Classic scripts can't import chunks, so the panel is inlined.
+    name: 'script-tag',
+    entry: { widget: 'src/script-tag.ts' },
+    format: 'iife',
+    globalName: 'FieldNotes',
+    // Only the local dev sink serves this build, so `enabled: 'auto'` is on.
+    define: { 'process.env.NODE_ENV': '"development"' },
+    platform: 'browser',
+    target: 'es2022',
+    minify: true,
+    dts: false,
+    clean: false,
+    outputOptions: { codeSplitting: false },
   },
   {
     ...shared,

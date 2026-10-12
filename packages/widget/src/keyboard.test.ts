@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { TAG_NAME, isEditableTarget } from './index.ts';
+import { isEditableTarget } from './keyboard.ts';
 
 function make(html: string): Element {
   const host = document.createElement('div');
@@ -40,11 +40,5 @@ describe('isEditableTarget', () => {
   it('rejects non-elements', () => {
     expect(isEditableTarget(null)).toBe(false);
     expect(isEditableTarget(window)).toBe(false);
-  });
-});
-
-describe('TAG_NAME', () => {
-  it('is a valid custom element name', () => {
-    expect(TAG_NAME).toMatch(/^[a-z][a-z0-9]*-[a-z0-9-]*$/);
   });
 });

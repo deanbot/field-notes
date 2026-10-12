@@ -17,8 +17,9 @@
     "check:package": "pnpm --filter field-notes check:package",
     "size": "size-limit",
     "knip": "knip",
+    "check:dist": "node scripts/check-dist.ts",
     "smoke": "node scripts/smoke-pack.ts",
-    "verify": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:coverage && pnpm check:package && pnpm size && pnpm knip && pnpm smoke",
+    "verify": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:coverage && pnpm check:package && pnpm size && pnpm check:dist && pnpm knip && pnpm smoke",
     "changeset": "changeset",
     "release": "pnpm build && changeset publish"
   },

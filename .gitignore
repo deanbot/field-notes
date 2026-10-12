@@ -7,7 +7,7 @@ coverage/
 .field-notes/
 playwright-report/
 test-results/
-.vitest-attachments/
+.vitest/
 
 # Copied from the repo root by the field-notes prepack script
 packages/field-notes/README.md

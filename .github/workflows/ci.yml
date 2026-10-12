@@ -33,6 +33,7 @@ jobs:
       - run: pnpm test:coverage
       - run: pnpm check:package
       - run: pnpm size
+      - run: pnpm check:dist
       - run: pnpm knip
       - run: pnpm smoke
 
