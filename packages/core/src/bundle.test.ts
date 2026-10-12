@@ -110,6 +110,10 @@ describe('writeBundle / readBundle', () => {
     ],
     ['duplicate notes', [items[1], items[1]] as BundleItem[]],
     ['an attachment path', [{ note: note('a', ''), attachments: { '../x.png': png } }]],
+    [
+      'a drive-relative attachment name',
+      [{ note: note('a', ''), attachments: { 'C:x.png': png } }],
+    ],
     ['an attachment named note.md', [{ note: note('a', ''), attachments: { 'note.md': png } }]],
   ])('throws on %s', (_, input) => {
     expect(() => writeBundle(input)).toThrow(TypeError);
@@ -129,6 +133,11 @@ describe('readBundle rejects hostile input', () => {
   ])('%s', (_, path) => {
     const zip = zipSync({ ...validItem(), [path]: strToU8('x') });
     expect(error(readBundle(zip))).toEqual({ code: 'unsafe-path', entry: path });
+  });
+
+  it.each(['C:evil.png', 'a:b', ' ', 'x\n.png', 'é.png'])('attachment name %j', (name) => {
+    const zip = zipSync({ ...validItem(), [`items/a-note/${name}`]: png });
+    expect(error(readBundle(zip))).toEqual({ code: 'unsafe-path', entry: `items/a-note/${name}` });
   });
 
   it('a symlink entry', () => {

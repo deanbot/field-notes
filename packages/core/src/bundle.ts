@@ -1,6 +1,6 @@
 import { inflateSync, zipSync } from 'fflate';
 import type { Zippable } from 'fflate';
-import { NoteSchema } from './note.ts';
+import { NoteSchema, isAttachmentName } from './note.ts';
 import type { Note } from './note.ts';
 import { noteDirName, parseNote, serializeNote } from './note-file.ts';
 
@@ -75,7 +75,7 @@ export function writeBundle(
     if (`${prefix}${NOTE_FILE}` in files) throw new TypeError(`writeBundle: duplicate note ${dir}`);
     files[`${prefix}${NOTE_FILE}`] = encoder.encode(serializeNote(note));
     for (const [name, bytes] of Object.entries(attachments)) {
-      if (!SAFE_SEGMENT.test(name) || name === NOTE_FILE) {
+      if (!isAttachmentName(name) || name === NOTE_FILE) {
         throw new TypeError(`writeBundle: invalid attachment name ${JSON.stringify(name)}`);
       }
       // Already-compressed formats (PNG, JPEG, WebP) don't shrink; store them as-is.
@@ -284,6 +284,9 @@ export function readBundle(bytes: Uint8Array, options: ReadBundleOptions = {}): 
       const match = /^items\/([^/]+)\/([^/]+)$/.exec(entry.name);
       if (!match || IGNORED.test(entry.name)) continue;
       const [, dir = '', file = ''] = match;
+      if (file !== NOTE_FILE && !isAttachmentName(file)) {
+        throw new Reject('unsafe-path', 'Attachment name not allowed', entry.name);
+      }
       const item = items.get(dir) ?? { attachments: [] };
       items.set(dir, item);
       const content = extract(bytes, entry);
