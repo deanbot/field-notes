@@ -133,6 +133,7 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
         panel = await loading;
       } catch (error) {
         loading = undefined;
+        wanted = false; // nothing opened, so the next toggle() opens again
         warn(`couldn't load the panel. ${String(error)}`);
         return;
       }

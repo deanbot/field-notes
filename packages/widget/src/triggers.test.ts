@@ -122,16 +122,19 @@ describe('hotkey', () => {
     expect(isOpen()).toBe(false);
   });
 
-  it('never opens while typing in a field inside a host shadow root', async () => {
-    mount();
-    const host = document.createElement('div');
-    document.body.append(host);
-    const input = document.createElement('input');
-    host.attachShadow({ mode: 'open' }).append(input);
-    expect(pressHotkey(input).defaultPrevented).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(isOpen()).toBe(false);
-  });
+  it.each(['open', 'closed'] as const)(
+    'never opens while typing in a field inside a host %s shadow root',
+    async (mode) => {
+      mount();
+      const host = document.createElement('host-field');
+      document.body.append(host);
+      const input = document.createElement('input');
+      host.attachShadow({ mode }).append(input);
+      expect(pressHotkey(input).defaultPrevented).toBe(false);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(isOpen()).toBe(false);
+    },
+  );
 
   it("still toggles from a field inside the widget's own shadow root", async () => {
     mount();

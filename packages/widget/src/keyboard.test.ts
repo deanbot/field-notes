@@ -37,6 +37,15 @@ describe('isEditableTarget', () => {
     expect(isEditableTarget(root.querySelector('span'))).toBe(true);
   });
 
+  it('treats a custom element with no visible shadow root as editable', () => {
+    const closed = make('<closed-field></closed-field>');
+    closed.attachShadow({ mode: 'closed' });
+    const open = make('<open-field></open-field>');
+    open.attachShadow({ mode: 'open' });
+    expect(isEditableTarget(closed)).toBe(true);
+    expect(isEditableTarget(open)).toBe(false);
+  });
+
   it('rejects non-elements', () => {
     expect(isEditableTarget(null)).toBe(false);
     expect(isEditableTarget(window)).toBe(false);
