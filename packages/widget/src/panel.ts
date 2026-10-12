@@ -254,7 +254,6 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   };
   const form = createForm({
     ...view,
-    disposed: () => disposed,
     redraw: () => {
       if (!disposed) draw();
     },

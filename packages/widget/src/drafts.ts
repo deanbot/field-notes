@@ -39,3 +39,8 @@ export function saveDraft(draft: Draft): void {
 export function clearDraft(): void {
   saveDraft({ text: '' });
 }
+
+/** Puts a draft back, unless a newer one has been saved since. */
+export function restoreDraft(draft: Draft): void {
+  if (!loadDraft()) saveDraft(draft);
+}

@@ -3,7 +3,7 @@
 import type { Note } from '@field-notes/core/note';
 import { html, type TemplateResult } from 'lit/html.js';
 import { awaitContext, buildNote, resolveAuthor, startContext } from './capture.ts';
-import { clearDraft, loadDraft, saveDraft } from './drafts.ts';
+import { clearDraft, loadDraft, restoreDraft, saveDraft } from './drafts.ts';
 import type { FieldNotesOptions } from './mount.ts';
 
 const DEFAULT_TYPES: readonly string[] = ['bug', 'change', 'idea', 'question'];
@@ -17,8 +17,6 @@ export interface FormDeps {
   readonly deliver: (note: Note) => Promise<void>;
   /** Aborted on unmount. */
   readonly signal: AbortSignal;
-  /** True once this form's panel has closed: a later open has its own form. */
-  readonly disposed: () => boolean;
   /** Re-renders the panel after a state change. */
   readonly redraw: () => void;
   readonly focusText: () => void;
@@ -66,13 +64,19 @@ export function createForm(deps: FormDeps): Form {
       deps.focusText();
       return;
     }
+    // From here the submit owns the note, not the panel: closing the panel
+    // doesn't cancel it, and a reopened panel starts empty, so nothing can be
+    // added twice. Only unmount cancels, and then the text goes back.
+    const sent = { text, type };
+    clearDraft();
     busy = true;
     error = '';
     deps.redraw();
     const resolved = await awaitContext(context, deps.signal);
-    // Closed while waiting: send nothing. The draft is kept, so the next
-    // panel has the text, and nothing can be added twice.
-    if (deps.disposed() || unmounted()) return;
+    if (unmounted()) {
+      restoreDraft(sent);
+      return;
+    }
     try {
       const note = buildNote({
         body,
@@ -85,15 +89,14 @@ export function createForm(deps: FormDeps): Form {
       });
       await deps.deliver(note);
     } catch (cause) {
-      console.warn('[field-notes] the note was not added.', cause);
+      console.warn('[field-notes] the note was not added; its text is back in the draft.', cause);
+      restoreDraft(sent);
       busy = false;
       error = "Couldn't add the note. Your text is kept.";
-      deps.redraw();
+      deps.redraw(); // a no-op once the panel has closed
       return;
     }
-    if (unmounted()) return;
-    clearDraft();
-    deps.submitted();
+    if (!unmounted()) deps.submitted();
   };
 
   const onInput = (event: Event): void => {
@@ -138,6 +141,7 @@ export function createForm(deps: FormDeps): Form {
         placeholder="What did you notice?"
         aria-invalid=${error ? 'true' : 'false'}
         aria-describedby="field-notes-error"
+        ?readonly=${busy}
         .value=${text}
         @input=${onInput}
       ></textarea>
@@ -153,6 +157,7 @@ export function createForm(deps: FormDeps): Form {
                       name="type"
                       .value=${value}
                       .checked=${type === value}
+                      ?disabled=${busy}
                       @click=${onChipClick(value)}
                       @change=${onChipChange(value)}
                     /><span>${value}</span></label

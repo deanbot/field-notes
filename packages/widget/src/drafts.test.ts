@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { clearDraft, loadDraft, saveDraft } from './drafts.ts';
+import { clearDraft, loadDraft, restoreDraft, saveDraft } from './drafts.ts';
 
 const KEY = 'field-notes:draft';
 
@@ -15,6 +15,14 @@ describe('drafts', () => {
     clearDraft();
     expect(loadDraft()).toBeUndefined();
     expect(localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('restores a draft only when nothing newer was saved', () => {
+    restoreDraft({ text: 'sent' });
+    expect(loadDraft()).toEqual({ text: 'sent' });
+    saveDraft({ text: 'newer' });
+    restoreDraft({ text: 'sent' });
+    expect(loadDraft()).toEqual({ text: 'newer' });
   });
 
   it('removes an empty draft rather than storing it', () => {

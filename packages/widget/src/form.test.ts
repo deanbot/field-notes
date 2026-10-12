@@ -310,8 +310,11 @@ describe('metadata', () => {
   });
 });
 
-describe('a submit still in flight', () => {
-  it('sends nothing and leaves the reopened panel alone when closed before delivery', async () => {
+const DRAFT_KEY = 'field-notes:draft';
+const storedDraft = (): unknown => JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null');
+
+describe('a submit, once started', () => {
+  it('still delivers when the panel closes while context() is pending', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const h = mount({ context: () => new Promise(() => undefined) });
     await h.open();
@@ -322,15 +325,19 @@ describe('a submit still in flight', () => {
       expect(dialog()).toBeNull();
     });
     await h.open();
-    // Past the old submit's context() timeout.
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    expect(delivered).not.toHaveBeenCalled();
+    expect(textarea().value).toBe('');
+    await vi.waitFor(
+      () => {
+        expect(delivered).toHaveBeenCalledOnce();
+      },
+      { timeout: 3000 },
+    );
+    expect(lastNote().body).toBe('first');
+    expect(toast()?.matches(':popover-open')).toBe(true);
     expect(dialog()?.open).toBe(true);
-    expect(textarea().value).toBe('first');
-    expect(shadow().querySelector('button.primary')?.hasAttribute('disabled')).toBe(false);
   });
 
-  it('finishes a delivery already under way without touching the reopened panel', async () => {
+  it('leaves the reopened panel empty and its own while delivery finishes', async () => {
     let finish: () => void = () => undefined;
     delivered.mockImplementation(
       () =>
@@ -347,27 +354,60 @@ describe('a submit still in flight', () => {
     });
     h.close();
     await h.open();
-    await userEvent.type(textarea(), ' and more');
+    expect(textarea().value).toBe('');
+    await userEvent.type(textarea(), 'second');
     finish();
     await vi.waitFor(() => {
       expect(toast()?.matches(':popover-open')).toBe(true);
     });
     expect(dialog()?.open).toBe(true);
-    expect(textarea().value).toBe('first and more');
+    expect(textarea().value).toBe('second');
+    expect(storedDraft()).toEqual({ text: 'second' });
+  });
+
+  it('locks the form while it runs', async () => {
+    delivered.mockImplementation(() => new Promise<void>(() => undefined));
+    await mount().open();
+    await userEvent.type(textarea(), 'first');
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    await vi.waitFor(() => {
+      expect(delivered).toHaveBeenCalledOnce();
+    });
+    expect(textarea().readOnly).toBe(true);
+    expect(chip('bug')?.disabled).toBe(true);
+    expect(storedDraft()).toBeNull();
+  });
+
+  it('is cancelled by unmount, which puts the text back', async () => {
+    const h = mount({ context: () => new Promise(() => undefined) });
+    await h.open();
+    await userEvent.type(textarea(), 'first');
+    const idea = chip('idea');
+    if (!idea) throw new Error('no chip');
+    await userEvent.click(idea);
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    h.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(delivered).not.toHaveBeenCalled();
+    expect(storedDraft()).toEqual({ text: 'first', type: 'idea' });
   });
 });
 
-describe('a failed delivery from a closed panel', () => {
-  it('leaves the reopened panel as it is', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+describe('a delivery that fails', () => {
+  function failNext(): (error: Error) => void {
     let fail: (error: Error) => void = () => undefined;
-    delivered.mockImplementation(
+    delivered.mockImplementationOnce(
       () =>
         new Promise<void>((_, reject) => {
           fail = reject;
         }),
     );
-    const h = mount();
+    return (error) => {
+      fail(error);
+    };
+  }
+
+  async function submitThenReopen(h: FieldNotesHandle): Promise<void> {
     await h.open();
     await userEvent.type(textarea(), 'first');
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
@@ -376,14 +416,39 @@ describe('a failed delivery from a closed panel', () => {
     });
     h.close();
     await h.open();
-    await userEvent.type(textarea(), ' and more');
+  }
+
+  it('brings the text back on the next open, after its panel closed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fail = failNext();
+    const h = mount();
+    await submitThenReopen(h);
     const before = textarea();
     fail(new Error('disk full'));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalled();
+    });
+    // The open panel is left as it was.
     expect(textarea()).toBe(before);
-    expect(textarea().value).toBe('first and more');
+    expect(textarea().value).toBe('');
     expect(errorText()).toBe('');
-    expect(shadow().querySelector('button.primary')?.hasAttribute('disabled')).toBe(false);
+    h.close();
+    await h.open();
+    expect(textarea().value).toBe('first');
+  });
+
+  it("doesn't overwrite what was typed since", async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fail = failNext();
+    const h = mount();
+    await submitThenReopen(h);
+    await userEvent.type(textarea(), 'second');
+    fail(new Error('disk full'));
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalled();
+    });
+    expect(storedDraft()).toEqual({ text: 'second' });
+    expect(textarea().value).toBe('second');
   });
 });
 
