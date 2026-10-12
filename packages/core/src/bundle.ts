@@ -276,13 +276,15 @@ export function readBundle(bytes: Uint8Array, options: ReadBundleOptions = {}): 
       }
     }
 
-    const items = new Map<string, { note?: Note; attachments: Record<string, Uint8Array> }>();
+    // Attachment names come from the zip, so collect pairs and let Object.fromEntries
+    // define them: assigning `record['__proto__']` would set the prototype instead.
+    const items = new Map<string, { note?: Note; attachments: [string, Uint8Array][] }>();
     const decoder = new TextDecoder();
     for (const entry of entries) {
       const match = /^items\/([^/]+)\/([^/]+)$/.exec(entry.name);
       if (!match || IGNORED.test(entry.name)) continue;
       const [, dir = '', file = ''] = match;
-      const item = items.get(dir) ?? { attachments: {} };
+      const item = items.get(dir) ?? { attachments: [] };
       items.set(dir, item);
       const content = extract(bytes, entry);
       if (file === NOTE_FILE) {
@@ -290,14 +292,14 @@ export function readBundle(bytes: Uint8Array, options: ReadBundleOptions = {}): 
         if (!parsed.ok) throw new Reject('invalid-note', parsed.error.message, entry.name);
         item.note = parsed.value;
       } else {
-        item.attachments[file] = content;
+        item.attachments.push([file, content]);
       }
     }
 
     const result: BundleItem[] = [];
     for (const [dir, { note, attachments }] of items) {
       if (!note) throw new Reject('invalid-note', `Missing ${NOTE_FILE}`, `items/${dir}/`);
-      result.push({ note, attachments });
+      result.push({ note, attachments: Object.fromEntries(attachments) });
     }
     return { ok: true, value: result };
   } catch (error) {

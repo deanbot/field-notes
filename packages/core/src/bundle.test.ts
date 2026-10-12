@@ -252,6 +252,18 @@ describe('readBundle rejects hostile input', () => {
 });
 
 describe('readBundle tolerates', () => {
+  it('attachment names that are Object.prototype keys', () => {
+    const zip = zipSync({
+      ...validItem(),
+      'items/a-note/__proto__': png,
+      'items/a-note/constructor': png,
+    });
+    const result = readBundle(zip);
+    const attachments = result.ok ? result.value[0]?.attachments : undefined;
+    expect(attachments && Object.getPrototypeOf(attachments)).toBe(Object.prototype);
+    expect(attachments && Object.keys(attachments).sort()).toEqual(['__proto__', 'constructor']);
+  });
+
   it('unknown files, directory entries and macOS metadata', () => {
     const zip = zipSync({
       ...validItem(),
