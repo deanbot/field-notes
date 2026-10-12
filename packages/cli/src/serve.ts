@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
-import { createSinkHandler, setUpSinkDir } from '@field-notes/sink';
+import { DEFAULT_ALLOWED_ORIGINS, createSinkHandler, setUpSinkDir } from '@field-notes/sink';
 
 export interface ServeOptions {
   readonly port: number;
@@ -13,6 +13,8 @@ export interface ServeOptions {
   readonly version: string;
   /** The script-tag build, with the token placeholder in it. */
   readonly widgetScript: () => Promise<string>;
+  /** Origins allowed besides the loopback defaults, such as `http://app.test:3000`. */
+  readonly origins?: readonly string[] | undefined;
 }
 
 export interface Serving {
@@ -48,7 +50,11 @@ export async function serve(options: ServeOptions): Promise<Serving> {
   // `.gitignore` first, so the token is never untracked-but-visible to git.
   await setUpSinkDir(dir);
   const token = await loadToken(dir);
-  const sink = createSinkHandler({ dir, token });
+  const sink = createSinkHandler({
+    dir,
+    token,
+    allowedOrigins: [...DEFAULT_ALLOWED_ORIGINS, ...(options.origins ?? [])],
+  });
 
   const server = createServer((req, res) => {
     const path = URL.parse(req.url ?? '/', 'http://serve')?.pathname;

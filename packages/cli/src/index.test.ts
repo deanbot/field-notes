@@ -51,6 +51,7 @@ describe('run', () => {
       expect(result.code).toBe(0);
       expect(result.stdout).toContain('Usage: field-notes');
       expect(result.stdout).toContain('serve');
+      expect(result.stdout).toContain('--origin');
     }
   });
 
@@ -182,6 +183,40 @@ describe('serve', () => {
     expect((await send({})).status).toBe(401);
     expect((await send({ 'x-field-notes-token': token })).status).toBe(201);
     expect(await readdir(join(root, '.field-notes', 'items'))).toHaveLength(1);
+  });
+
+  it('takes notes from an https dev page, and from an origin given with --origin', async () => {
+    const { url } = await start([
+      '--origin',
+      'http://app.test:3000',
+      '--origin',
+      'http://other.test:*',
+    ]);
+    const token = (await readFile(join(root, '.field-notes', '.token'), 'utf8')).trim();
+    const send = (origin: string): Promise<number> =>
+      fetch(`${url}/__field-notes`, {
+        method: 'POST',
+        headers: { origin, 'content-type': 'application/json', 'x-field-notes-token': token },
+        body: JSON.stringify({
+          schema: 1,
+          status: 'open',
+          created: '2026-10-09T18:42:11.204Z',
+          body: origin,
+        }),
+      }).then((res) => res.status);
+    expect(await send('https://localhost:5173')).toBe(201);
+    expect(await send('http://app.test:3000')).toBe(201);
+    expect(await send('http://other.test:8080')).toBe(201);
+    expect(await send('http://app.test:3001')).toBe(403);
+    expect(await send('http://evil.test')).toBe(403);
+  });
+
+  it('rejects an --origin that is not an origin', async () => {
+    for (const origin of ['app.test', 'http://app.test/path', '*']) {
+      const result = await capture(['serve', '--origin', origin]);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain('--origin');
+    }
   });
 
   it('exits 1 with a clear message when the port is taken', async () => {

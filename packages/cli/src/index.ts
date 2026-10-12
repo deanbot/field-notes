@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import { isOriginPattern } from '@field-notes/sink';
 import { serve } from './serve.ts';
 
 export interface CliIo {
@@ -17,6 +18,10 @@ Commands:
   serve    Run the local sink: notes from the widget land in --dir
            --port <n>   Port on 127.0.0.1 (default 4747; 0 picks a free one)
            --dir <path> Where notes go (default .field-notes)
+           --origin <origin>
+                        Also take notes from this page origin (repeatable),
+                        such as http://app.test:3000 or http://app.test:*.
+                        Loopback over http and https is always allowed.
 
 Options:
   -h, --help     Show this help
@@ -35,6 +40,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
         version: { type: 'boolean', short: 'v' },
         port: { type: 'string' },
         dir: { type: 'string' },
+        origin: { type: 'string', multiple: true },
       },
     });
   } catch (error) {
@@ -58,16 +64,35 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
       io.stderr(`--port must be a port number, not ${JSON.stringify(values.port)}\n`);
       return 2;
     }
-    return runServe(port, values.dir ?? '.field-notes', io);
+    const origins = values.origin ?? [];
+    const bad = origins.find((origin) => !isOriginPattern(origin));
+    if (bad !== undefined) {
+      io.stderr(
+        `--origin must be an origin like http://app.test:3000, not ${JSON.stringify(bad)}\n`,
+      );
+      return 2;
+    }
+    return runServe(port, values.dir ?? '.field-notes', origins, io);
   }
   io.stderr(`Unknown command: ${command}\n\n${USAGE}`);
   return 2;
 }
 
-async function runServe(port: number, dir: string, io: CliIo): Promise<number> {
+async function runServe(
+  port: number,
+  dir: string,
+  origins: readonly string[],
+  io: CliIo,
+): Promise<number> {
   let serving;
   try {
-    serving = await serve({ port, dir, version: io.version, widgetScript: io.widgetScript });
+    serving = await serve({
+      port,
+      dir,
+      origins,
+      version: io.version,
+      widgetScript: io.widgetScript,
+    });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     io.stderr(
