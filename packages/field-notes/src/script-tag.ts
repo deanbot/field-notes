@@ -7,4 +7,5 @@ const api: ScriptApi = startScriptTag(document.currentScript);
 export const mount: ScriptApi['mount'] = api.mount;
 export const open: ScriptApi['open'] = api.open;
 export const close: ScriptApi['close'] = api.close;
+export const toggle: ScriptApi['toggle'] = api.toggle;
 export const unmount: ScriptApi['unmount'] = api.unmount;

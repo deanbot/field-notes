@@ -30,7 +30,7 @@ describe('mountFieldNotes', () => {
   // First, before anything in this file has opened the widget.
   it('loads no Lit until the first open', async () => {
     const handle = mount({ enabled: true });
-    expect(shadow().childElementCount).toBe(0);
+    expect(panel()).toBeNull();
     expect('litHtmlVersions' in globalThis).toBe(false);
     await handle.open();
     expect('litHtmlVersions' in globalThis).toBe(true);
@@ -96,13 +96,19 @@ describe('mountFieldNotes', () => {
     const opening = handle.open();
     handle.unmount();
     await opening;
-    expect(root.childElementCount).toBe(0);
+    expect(root.querySelector('[role="dialog"]')).toBeNull();
     expect(handle.active).toBe(false);
   });
 
   it('unmount() removes the element and leaves no listeners on the page', async () => {
-    const added: unknown[] = [];
-    const removed: unknown[] = [];
+    interface Entry {
+      target: EventTarget;
+      type: string;
+      listener: unknown;
+      signal?: AbortSignal | undefined;
+    }
+    const added: Entry[] = [];
+    const removed: Entry[] = [];
     const page = new Set<EventTarget>([window, document, document.documentElement, document.body]);
     // Called back with .apply(this) below, so unbinding them is fine.
     /* eslint-disable @typescript-eslint/unbound-method */
@@ -113,25 +119,39 @@ describe('mountFieldNotes', () => {
       this: EventTarget,
       ...args
     ) {
-      if (page.has(this)) added.push(args[0]);
+      const [type, listener, options] = args;
+      const signal = typeof options === 'object' ? options.signal : undefined;
+      if (page.has(this)) added.push({ target: this, type, listener, signal });
       add.apply(this, args);
     });
     vi.spyOn(EventTarget.prototype, 'removeEventListener').mockImplementation(function (
       this: EventTarget,
       ...args
     ) {
-      if (page.has(this)) removed.push(args[0]);
+      const [type, listener] = args;
+      if (page.has(this)) removed.push({ target: this, type, listener });
       remove.apply(this, args);
     });
 
     const handle = mount({ enabled: true });
     await handle.open();
     handle.close();
+    expect(added.length, 'the hotkey listens on the page').toBeGreaterThan(0);
     handle.unmount();
     handle.unmount();
 
+    const live = added.filter(
+      (entry) =>
+        !entry.signal?.aborted &&
+        !removed.some(
+          (gone) =>
+            gone.target === entry.target &&
+            gone.type === entry.type &&
+            gone.listener === entry.listener,
+        ),
+    );
     expect(elements()).toHaveLength(0);
-    expect(added.length - removed.length).toBe(0);
+    expect(live.map((entry) => entry.type)).toEqual([]);
     expect(handle.active).toBe(false);
     await handle.open();
     expect(elements()).toHaveLength(0);

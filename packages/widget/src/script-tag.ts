@@ -1,8 +1,10 @@
+import type { Corner, Offset } from './button.ts';
 import {
   type FieldNotesHandle,
   type FieldNotesOptions,
   findMount,
   mountFieldNotes,
+  type Trigger,
 } from './mount.ts';
 
 /**
@@ -15,15 +17,43 @@ export interface ScriptApi {
   readonly mount: (options?: FieldNotesOptions) => FieldNotesHandle;
   readonly open: () => Promise<void>;
   readonly close: () => void;
+  readonly toggle: () => Promise<void>;
   readonly unmount: () => void;
 }
 
-/** Options from the script tag's `data-*` attributes. */
+const CORNERS: readonly string[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const TRIGGERS: readonly string[] = ['button', 'hotkey'];
+
+/** `16` → 16; `8,24` → x 8, y 24. Anything else is ignored. */
+function parseOffset(text: string): Offset | undefined {
+  const parts = text.split(',').map((part) => Number(part.trim()));
+  if (parts.length > 2 || parts.some((n) => !Number.isFinite(n))) return undefined;
+  const [x = 0, y = x] = parts;
+  return parts.length === 1 ? x : { x, y };
+}
+
+/**
+ * Options from the script tag's `data-*` attributes: `data-enabled`
+ * (`true`/`false`), `data-trigger` (`"button hotkey"`, or empty for API only),
+ * `data-position` (a corner), `data-offset` (`16` or `8,24`) and `data-hotkey`.
+ * Values it doesn't recognise are ignored.
+ */
 export function scriptOptions(script: HTMLOrSVGScriptElement | null): FieldNotesOptions {
-  const enabled = script?.dataset.enabled;
-  if (enabled === 'true') return { enabled: true };
-  if (enabled === 'false') return { enabled: false };
-  return {};
+  const data = script?.dataset ?? {};
+  const options: FieldNotesOptions = {};
+  if (data.enabled === 'true' || data.enabled === 'false')
+    options.enabled = data.enabled === 'true';
+  if (data.trigger !== undefined) {
+    const words = data.trigger.split(/[\s,]+/).filter((word) => TRIGGERS.includes(word));
+    options.trigger = words as Trigger[];
+  }
+  if (data.position && CORNERS.includes(data.position)) {
+    options.buttonPosition = data.position as Corner;
+  }
+  const offset = data.offset ? parseOffset(data.offset) : undefined;
+  if (offset !== undefined) options.buttonOffset = offset;
+  if (data.hotkey) options.hotkey = data.hotkey;
+  return options;
 }
 
 /** Mounts from a script tag once the document has a body, and returns its API. */
@@ -44,6 +74,7 @@ export function startScriptTag(script: HTMLOrSVGScriptElement | null): ScriptApi
     },
     open: () => handle?.open() ?? Promise.resolve(),
     close: () => handle?.close(),
+    toggle: () => handle?.toggle() ?? Promise.resolve(),
     unmount: () => {
       pending.abort();
       if (owned) handle?.unmount();

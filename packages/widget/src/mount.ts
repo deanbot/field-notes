@@ -1,10 +1,24 @@
 import { type Enabled, isEnabled } from './activation.ts';
+import { BUTTON_CSS, type Corner, type Offset, createButton } from './button.ts';
 import { HANDLE_KEY, TAG_NAME, defineShell } from './element.ts';
+import { matchesHotkey, parseHotkey } from './hotkey.ts';
+import { isEditableTarget } from './keyboard.ts';
 import type * as PanelModule from './panel.ts';
+
+/** What opens the widget. The API (`open()`, `close()`, `toggle()`) always works. */
+export type Trigger = 'button' | 'hotkey';
 
 export interface FieldNotesOptions {
   /** When the widget is on. Default `'auto'`: dev builds only. */
   enabled?: Enabled | undefined;
+  /** Default `['button', 'hotkey']`. An empty list leaves only the API. */
+  trigger?: readonly Trigger[] | undefined;
+  /** Corner for the floating button. Default `'bottom-right'`. */
+  buttonPosition?: Corner | undefined;
+  /** The button's distance from its corner, in px. Default `16`. */
+  buttonOffset?: Offset | undefined;
+  /** Default `'Alt+Shift+F'`. Modifiers (`Alt`, `Ctrl`, `Meta`, `Shift`) plus one key. */
+  hotkey?: string | undefined;
 }
 
 export interface FieldNotesHandle {
@@ -13,6 +27,8 @@ export interface FieldNotesHandle {
   /** Opens the widget, loading the panel on first use. */
   readonly open: () => Promise<void>;
   readonly close: () => void;
+  /** Opens when closed (or closing), closes when open (or opening). */
+  readonly toggle: () => Promise<void>;
   /** Removes the element and everything the widget added to the page. */
   readonly unmount: () => void;
 }
@@ -23,12 +39,13 @@ const inactive: FieldNotesHandle = Object.freeze({
   active: false,
   open: () => Promise.resolve(),
   close: () => undefined,
+  toggle: () => Promise.resolve(),
   unmount: () => undefined,
 });
 
 // Applied to the shell itself. `!important` is what lets it beat host rules
 // that match `<field-notes>` from outside, such as `* { color: red }`.
-const SHELL_CSS = ':host { all: initial !important; }';
+const SHELL_CSS = `:host { all: initial !important; }${BUTTON_CSS}`;
 
 /**
  * The live mount on the page, from any copy of the widget. It looks past
@@ -78,6 +95,21 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
   sheet.replaceSync(SHELL_CSS);
   root.adoptedStyleSheets = [sheet];
 
+  const triggers = new Set(options.trigger ?? ['button', 'hotkey']);
+  const hotkeyText = options.hotkey ?? 'Alt+Shift+F';
+  const hotkey = triggers.has('hotkey') ? parseHotkey(hotkeyText) : undefined;
+  if (triggers.has('hotkey') && !hotkey) warn(`"${hotkeyText}" isn't a hotkey; the hotkey is off.`);
+  // Every listener the mount adds goes through this, and unmount() aborts it.
+  const teardown = new AbortController();
+  const { signal } = teardown;
+
+  const button = triggers.has('button')
+    ? createButton(options.buttonPosition ?? 'bottom-right', options.buttonOffset ?? 16)
+    : undefined;
+  const expanded = (open: boolean): void => {
+    button?.setAttribute('aria-expanded', String(open));
+  };
+
   type Panel = typeof PanelModule;
   let alive = true;
   let wanted = false; // the last call was open(), not close()
@@ -107,23 +139,55 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
       if (!stillWanted()) return;
       shown = panel;
       panel.showPanel(root, { close: handle.close });
+      expanded(true);
     },
     close: () => {
       wanted = false;
       shown?.hidePanel(root);
       shown = undefined;
+      expanded(false);
+    },
+    toggle: () => {
+      if (!wanted) return handle.open();
+      handle.close();
+      return Promise.resolve();
     },
     unmount: () => {
       if (!alive) return;
       alive = false;
       handle.close();
+      teardown.abort();
       el.remove();
       Reflect.deleteProperty(el, HANDLE_KEY);
     },
   };
 
+  if (button) {
+    button.addEventListener('click', () => void handle.toggle(), { signal });
+    root.append(button);
+  }
+  if (hotkey) {
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.defaultPrevented || event.repeat || event.isComposing) return;
+        if (!matchesHotkey(hotkey, event)) return;
+        // Typing in the host's fields never opens the widget; in our own
+        // fields the hotkey still closes it.
+        const ours = event.composedPath().includes(el);
+        if (!ours && isEditableTarget(event.composedPath()[0] ?? null)) return;
+        // Only now is the key ours to claim.
+        event.preventDefault();
+        void handle.toggle();
+      },
+      { signal },
+    );
+  }
+
   el[HANDLE_KEY] = handle;
   // A script tag in <head> can mount before <body> exists.
   ((document.body as HTMLElement | null) ?? document.documentElement).append(el);
+  // Promoted once connected; older engines without popovers keep it fixed.
+  if (button && 'showPopover' in button) button.showPopover();
   return handle;
 }

@@ -26,6 +26,22 @@ describe('scriptOptions', () => {
     expect(scriptOptions(tag(attrs))).toEqual(expected);
   });
 
+  it.each([
+    [{ trigger: 'hotkey' }, { trigger: ['hotkey'] }],
+    [{ trigger: 'button, hotkey' }, { trigger: ['button', 'hotkey'] }],
+    [{ trigger: '' }, { trigger: [] }],
+    [{ trigger: 'button bogus' }, { trigger: ['button'] }],
+    [{ position: 'top-left' }, { buttonPosition: 'top-left' }],
+    [{ position: 'middle' }, {}],
+    [{ offset: '24' }, { buttonOffset: 24 }],
+    [{ offset: '8, 24' }, { buttonOffset: { x: 8, y: 24 } }],
+    [{ offset: '8,24,1' }, {}],
+    [{ offset: 'far' }, {}],
+    [{ hotkey: 'Ctrl+K' }, { hotkey: 'Ctrl+K' }],
+  ])('%o → %o', (attrs, expected) => {
+    expect(scriptOptions(tag(attrs))).toEqual(expected);
+  });
+
   it('defaults without a script element', () => {
     expect(scriptOptions(null)).toEqual({});
   });
@@ -39,6 +55,8 @@ describe('startScriptTag', () => {
     expect(document.querySelector(TAG_NAME)?.shadowRoot?.querySelector('h2')).not.toBeNull();
     api.close();
     expect(document.querySelector(TAG_NAME)?.shadowRoot?.querySelector('h2')).toBeNull();
+    await api.toggle();
+    expect(document.querySelector(TAG_NAME)?.shadowRoot?.querySelector('h2')).not.toBeNull();
   });
 
   it('waits for DOMContentLoaded while the document is loading', () => {
@@ -101,6 +119,7 @@ describe('startScriptTag', () => {
     vi.spyOn(document, 'readyState', 'get').mockReturnValue('loading');
     api = startScriptTag(tag());
     await api.open();
+    await api.toggle();
     api.close();
     api.unmount();
     expect(document.querySelectorAll(TAG_NAME)).toHaveLength(0);
