@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_ALLOWED_ORIGINS, isAllowedOrigin } from './index.ts';
+import { DEFAULT_ALLOWED_ORIGINS, isAllowedOrigin } from './origin.ts';
 
 describe('isAllowedOrigin', () => {
   it('accepts localhost on any port with the defaults', () => {

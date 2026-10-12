@@ -258,7 +258,7 @@ The place-order button should say "Start free trial" and the coupon
 field should be hidden.
 ```
 
-- The same JSON shape (frontmatter fields plus `body`) is the sink's request payload, and `note.md` is the same file whether the sink or an export zip wrote it. It is deliberately transport-neutral, so future adapters reuse it unchanged.
+- The same JSON shape (frontmatter fields plus `body`), minus the `id` the sink assigns, is the sink's request payload, and `note.md` is the same file whether the sink or an export zip wrote it. It is deliberately transport-neutral, so future adapters reuse it unchanged.
 - `import` treats zip contents as untrusted. It rejects absolute paths, `..` and symlinks, validates the schema, and enforces size limits.
 - There is one directory per item and no shared index, so there are no write conflicts. Anything with file access can read the backlog.
 - Readers update only `status`/`resolution`/`tags` and may append `## Notes`.

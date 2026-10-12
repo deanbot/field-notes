@@ -253,7 +253,11 @@ importers:
         specifier: workspace:*
         version: link:../widget
 
-  packages/sink: {}
+  packages/sink:
+    dependencies:
+      '@field-notes/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/widget:
     dependencies:
