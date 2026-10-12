@@ -59,6 +59,10 @@ describe('serializeNote / parseNote', () => {
     ['span lines', { a: 'one\ntwo\n', b: ' padded ', c: 'tab\there' }],
     ['are unicode', { a: 'Café — 日本語 🚀', b: '\u0000\u0007' }],
     ['are nested', { a: { b: [1, { c: null }] }, d: [] }],
+    [
+      'are named like Object.prototype members',
+      { toString: 't', constructor: 'c', hasOwnProperty: 1, valueOf: { a: 1 } },
+    ],
   ])('keeps unknown fields whose values %s', (_, extra) => {
     const note = { ...minimal, ...extra };
     expect(value(parseNote(serializeNote(note)))).toEqual(note);
@@ -243,6 +247,19 @@ describe('updateNote', () => {
     });
   });
 
+  it('keeps CRLF line endings and a BOM', () => {
+    const crlf = `\uFEFF${original.replace(/\n/g, '\r\n')}`;
+    const updated = value(updateNote(crlf, { status: 'resolved', tags: ['a'] }));
+    expect(updated.startsWith('\uFEFF---\r\n')).toBe(true);
+    expect(updated.replace(/\r\n/g, '')).not.toContain('\n');
+    expect(value(parseNote(updated))).toMatchObject({ status: 'resolved', tags: ['a'] });
+  });
+
+  it('skips patch keys whose value is undefined', () => {
+    const updated = value(updateNote(original, { status: 'resolved', resolution: undefined }));
+    expect(updated).not.toContain('resolution');
+  });
+
   it('leaves fields that are not in the patch alone', () => {
     const updated = value(updateNote(original, { resolution: null }));
     expect(value(parseNote(updated))).toMatchObject({ status: 'open', resolution: null });
@@ -284,6 +301,23 @@ describe('appendToNotes', () => {
     const body = '## Notes\n\nmine\n\n## Other\n\nx\n';
     const updated = value(appendToNotes(serializeNote({ ...minimal, body }), 'Appended.'));
     expect(value(parseNote(updated)).body).toBe(`${body}\n## Notes\n\nAppended.\n`);
+  });
+
+  it('ignores ## Notes lines inside fenced code blocks', () => {
+    const body = 'Steps:\n\n```md\n## Notes\n```\n\n~~~~\n## Notes\n```\n~~~~\n';
+    const updated = value(appendToNotes(serializeNote({ ...minimal, body }), 'Real note.'));
+    expect(value(parseNote(updated)).body).toBe(`${body}\n## Notes\n\nReal note.\n`);
+  });
+
+  it("uses the file's CRLF line endings", () => {
+    const crlf = serializeNote({ ...minimal, body: 'Line one.\r\n' })
+      .replace(/\n/g, '\r\n')
+      .replace(/\r\r/g, '\r');
+    const updated = value(appendToNotes(crlf, 'First.\nSecond line.'));
+    expect(updated.replace(/\r\n/g, '')).not.toContain('\n');
+    expect(updated.endsWith('Line one.\r\n\r\n## Notes\r\n\r\nFirst.\r\nSecond line.\r\n')).toBe(
+      true,
+    );
   });
 
   it('works on an empty body', () => {
@@ -329,6 +363,10 @@ describe('noteDirName', () => {
     expect(noteDirName({ id: '01JA8X', body: '\n  \nCheckout button misaligned\nmore' })).toBe(
       '01JA8X-checkout-button-misaligned',
     );
+  });
+
+  it('is not unique: writers must create directories exclusively', () => {
+    expect(noteDirName({ id: 'a/b', body: 'x' })).toBe(noteDirName({ id: 'a_b', body: 'x' }));
   });
 
   it('falls back to "note" for an empty body', () => {

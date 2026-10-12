@@ -63,14 +63,25 @@ const PARSE_OPTIONS = { uniqueKeys: true, logLevel: 'error' } as const;
 /** Renders a note as `note.md`: YAML frontmatter, a blank line, then the body verbatim. */
 export function serializeNote(note: Note): string {
   const { body, ...fields } = note;
-  const ordered: Record<string, unknown> = {};
-  for (const key of FIELD_ORDER) if (key in fields) ordered[key] = fields[key];
-  for (const [key, value] of Object.entries(fields)) if (!(key in ordered)) ordered[key] = value;
+  const known = new Set<string>(FIELD_ORDER);
+  // Own keys only, and Object.fromEntries rather than assignment, so unknown
+  // fields named `toString` or `__proto__` are written like any other.
+  const ordered = Object.fromEntries([
+    ...FIELD_ORDER.filter((key) => Object.hasOwn(fields, key)).map((key): [string, unknown] => [
+      key,
+      fields[key],
+    ]),
+    ...Object.entries(fields).filter(([key]) => !known.has(key)),
+  ]);
   return `---\n${stringify(ordered, YAML_OPTIONS)}---\n\n${body}`;
 }
 
 interface Parts {
+  /** The opening `---` line as written, including any BOM. */
+  opening: string;
   frontmatter: string;
+  /** The closing `---` line as written, without the newline before it. */
+  closing: string;
   /** Everything after the closing `---` line, untouched. */
   rest: string;
 }
@@ -85,7 +96,9 @@ function split(text: string): Parts | undefined {
   const closing = CLOSING.exec(afterOpening);
   if (!closing) return undefined;
   return {
+    opening: opening[0],
     frontmatter: afterOpening.slice(0, closing.index),
+    closing: closing[0].replace(/^\r?\n/, ''),
     rest: afterOpening.slice(closing.index + closing[0].length),
   };
 }
@@ -145,7 +158,7 @@ export function updateNote(text: string, patch: NotePatch): NoteResult<string> {
     };
   }
   for (const key of ['status', 'resolution', 'tags'] as const) {
-    if (!(key in patch)) continue;
+    if (patch[key] === undefined) continue;
     // The document keeps its own (1.2) schema, so quote ambiguous strings explicitly.
     const node = doc.createNode(patch[key]);
     visit(node, {
@@ -159,7 +172,9 @@ export function updateNote(text: string, patch: NotePatch): NoteResult<string> {
   }
   const checked = validate(doc.toJS(), parts.rest.replace(/^\r?\n/, ''));
   if (!checked.ok) return checked;
-  return { ok: true, value: `---\n${doc.toString({ lineWidth: 0 })}---\n${parts.rest}` };
+  const eol = parts.opening.endsWith('\r\n') ? '\r\n' : '\n';
+  const frontmatter = doc.toString({ lineWidth: 0 }).replace(/\n/g, eol);
+  return { ok: true, value: `${parts.opening}${frontmatter}${parts.closing}${parts.rest}` };
 }
 
 /** Whether a YAML 1.1 parser would read `text`, unquoted, as something other than this string. */
@@ -171,11 +186,24 @@ function readsAsOtherType(text: string): boolean {
   }
 }
 
-const HEADING = /^## .*$/gm;
+/** The body's last level-2 heading, ignoring lines inside fenced code blocks. */
+function lastHeading(body: string): string | undefined {
+  let fence: string | undefined;
+  let last: string | undefined;
+  for (const line of body.split(/\r?\n/)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker && !fence) fence = marker;
+    else if (marker && fence && marker.startsWith(fence.charAt(0)) && marker.length >= fence.length)
+      fence = undefined;
+    else if (!fence && line.startsWith('## ')) last = line.trim();
+  }
+  return last;
+}
 
 /**
  * Appends a paragraph to the `## Notes` section at the end of the body,
  * starting that section if the body's last heading isn't already `## Notes`.
+ * Uses the file's own line endings.
  */
 export function appendToNotes(text: string, entry: string): NoteResult<string> {
   const parsed = parseNote(text);
@@ -185,9 +213,11 @@ export function appendToNotes(text: string, entry: string): NoteResult<string> {
   if (!parts) return { ok: false, error: missingFrontmatter() };
   const head = text.slice(0, text.length - parts.rest.length);
   const body = parts.rest.replace(/\s+$/, '');
-  const lastHeading = [...body.matchAll(HEADING)].at(-1)?.[0].trim();
-  const section = lastHeading === '## Notes' ? '' : `${body.trim() ? '\n\n' : '\n'}## Notes`;
-  return { ok: true, value: `${head}${body}${section}\n\n${entry.trim()}\n` };
+  const eol = parts.opening.endsWith('\r\n') ? '\r\n' : '\n';
+  const section =
+    lastHeading(body) === '## Notes' ? '' : `${body.trim() ? eol + eol : eol}## Notes`;
+  const paragraph = entry.trim().replace(/\r?\n/g, eol);
+  return { ok: true, value: `${head}${body}${section}${eol}${eol}${paragraph}${eol}` };
 }
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -209,6 +239,8 @@ export function ulid(now: number = Date.now()): string {
 /**
  * Directory name for a note: `<id>-<slug>`, where the slug comes from the
  * body's first non-empty line. Safe as a single path segment whatever the input.
+ * Not unique: different ids can map to the same name, so writers must create
+ * the directory exclusively (see spec/SPEC.md).
  */
 export function noteDirName(note: Pick<Note, 'id' | 'body'>): string {
   const safeId = note.id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64);
