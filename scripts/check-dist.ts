@@ -43,6 +43,10 @@ await check('the activation stub has no Lit, Zod, yaml or fflate', () => {
   assert(!YAML.test(stub) && !stub.includes(FFLATE), 'yaml or fflate is in the stub');
 });
 
+await check('the stub never touches IndexedDB (the outbox is in the panel chunk)', () => {
+  assert(!stub.includes('indexedDB'), 'the stub references indexedDB');
+});
+
 await check('the stub imports no chunk statically, so its size is its own', () => {
   // `from "./x.js"` or a bare `import "./x.js"`, in any quotes, minified or not.
   const statics = stub.match(/\bfrom\s*["'`]\.\/[^"'`]+|\bimport\s*["'`]\.\/[^"'`]+/g) ?? [];

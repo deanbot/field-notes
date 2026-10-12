@@ -292,14 +292,14 @@ The widget is a guest in someone else's page. It must not collide with the host'
 
 **Weight (enforced by size-limit in CI):**
 
-| what                                                          | when it loads               | budget (minified, gz)              |
-| ------------------------------------------------------------- | --------------------------- | ---------------------------------- |
-| activation stub: trigger listeners, `open()` API, badge count | at mount                    | **< 3 KB**, with no Lit and no Zod |
-| panel: Lit + views + form + `zod/mini`                        | first time the widget opens | < 20 KB                            |
-| screenshot (`modern-screenshot`)                              | first screenshot            | lazy                               |
-| zip (`fflate`)                                                | first export                | lazy                               |
+| what                                                          | when it loads               | budget (minified, gz)                |
+| ------------------------------------------------------------- | --------------------------- | ------------------------------------ |
+| activation stub: trigger listeners, `open()` API, badge count | at mount                    | **< 3.5 KB**, with no Lit and no Zod |
+| panel: Lit + views + form + `zod/mini`                        | first time the widget opens | < 20 KB                              |
+| screenshot (`modern-screenshot`)                              | first screenshot            | lazy                                 |
+| zip (`fflate`)                                                | first export                | lazy                                 |
 
-Until someone opens it, the host pays about 3 KB and a keydown listener. It does no work at mount: no DOM observers and no polling. Production builds that don't activate it tree-shake it away entirely.
+Until someone opens it, the host pays about 3.5 KB, a keydown listener and a `storage` listener (for the badge). It does no work at mount beyond one synchronous `localStorage` read of the pending count: no IndexedDB, no DOM observers and no polling. Production builds that don't activate it tree-shake it away entirely.
 
 **No collisions:**
 
@@ -368,7 +368,7 @@ Publish one package, `field-notes`, with subpath exports (`.`, `./sink`, `./vite
 | contract    | Vitest                                                                      | every writer validates against the schema; the sink and an export zip produce equivalent trees for the same note; old-schema fixtures still parse                                                                                                                                                                                                                          |
 | docs        | script                                                                      | every command in the README/recipes exists                                                                                                                                                                                                                                                                                                                                 |
 | e2e         | Playwright (Chromium, Firefox, WebKit)                                      | `vite-vue`, `next` and the script-tag fixture: capture → pick → screenshot → submit → note lands on disk; sink down → queued → flushed; widget absent from the production build. `vite-vue` export build: `?field-notes=1` → log 3 notes → badge 3 → export → badge 0 → zip downloaded → `import` → 3 valid notes on disk                                                  |
-| bundle      | size-limit                                                                  | activation stub < 3 KB gz (asserted to contain no Lit/Zod); panel < 20 KB gz; screenshot and zip chunks lazy; published package has zero runtime dependencies                                                                                                                                                                                                              |
+| bundle      | size-limit                                                                  | activation stub < 3.5 KB gz (asserted to contain no Lit/Zod); panel < 20 KB gz; screenshot and zip chunks lazy; published package has zero runtime dependencies                                                                                                                                                                                                            |
 | coexistence | Vitest browser mode                                                         | hostile host CSS; host already using Lit (different version); double registration (script tag + npm); host z-index 2147483647 overlay; host focus trap; `unmount()` leaves no listeners/elements behind                                                                                                                                                                    |
 | package     | publint + attw                                                              | exports, types and bin resolve correctly for ESM, bundler and node16 resolution                                                                                                                                                                                                                                                                                            |
 | smoke       | `scripts/smoke-pack.mjs`                                                    | the tarball users actually get: zero runtime deps, no `@field-notes/*` leaks in JS or `.d.ts`, subpath imports, bin, nodenext type resolution, README/LICENSE present                                                                                                                                                                                                      |

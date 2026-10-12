@@ -1,9 +1,10 @@
 import type { Note } from '@field-notes/core/note';
+import type { Outbox } from './outbox.ts';
 
 /**
- * Where a submitted note goes. Resolves once the note is safely stored.
- * A placeholder that accepts and drops it, until the outbox (#11) takes over.
+ * Where a submitted note goes: the outbox, which survives reloads. Resolves
+ * once the note is stored there; a transport delivers it from there.
  */
-export function deliver(_note: Note): Promise<void> {
-  return Promise.resolve();
+export function deliver(note: Note, outbox: Outbox): Promise<void> {
+  return outbox.add(note);
 }
