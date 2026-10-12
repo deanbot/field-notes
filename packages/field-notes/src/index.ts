@@ -4,6 +4,7 @@ export {
   type FieldNotesHandle,
   type FieldNotesOptions,
   type Offset,
+  type Surface,
   type Trigger,
   TAG_NAME,
   isEditableTarget,

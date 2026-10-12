@@ -44,7 +44,7 @@ it('runs beside a host on a different Lit version', async () => {
   await handle.open();
 
   expect(host.shadowRoot?.textContent).toContain('host on lit 2');
-  expect(shadow().querySelector('[role="dialog"]')).not.toBeNull();
+  expect(shadow().querySelector('dialog')).not.toBeNull();
   const versions = (globalThis as { litHtmlVersions?: string[] }).litHtmlVersions ?? [];
   expect(versions.some((v) => v.startsWith('2.'))).toBe(true);
   expect(versions.some((v) => v.startsWith('3.'))).toBe(true);
@@ -57,7 +57,7 @@ it('keeps hostile host CSS out of the shadow root', async () => {
   style.textContent = `
     * { color: rgb(255, 0, 0) !important; font: 40px/9 serif !important; }
     ${TAG_NAME} { display: none; padding: 99px; }
-    section, h2, button, [role="dialog"] { display: none !important; }
+    section, h2, button, dialog { display: none !important; }
   `;
   document.head.append(style);
 

@@ -15,6 +15,7 @@
     "lit": "3.3.3"
   },
   "devDependencies": {
+    "axe-core": "4.13.0",
     "lit-v2": "npm:lit@2.8.0"
   }
 }

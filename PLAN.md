@@ -110,21 +110,21 @@ Production builds tree-shake the widget away when it's guarded by `import.meta.e
 
 ### Configuration
 
-| option           | default                                                                      | notes                                                                                       |
-| ---------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `trigger`        | `['button', 'hotkey']`                                                       | any of `'button' \| 'hotkey'`; the `api` is always available                                |
-| `surface`        | `'popover'`; `'sheet'` if there's no button                                  | `'popover' \| 'sheet' \| 'side'`                                                            |
-| `buttonPosition` | `bottom-right`                                                               | `top-left`, `top-right`, `bottom-left`, `bottom-right`                                      |
-| `buttonOffset`   | `16`                                                                         | px from the corner: one number, or `{ x, y }`                                               |
-| `mode`           | `'local'`                                                                    | `'local' \| 'export'`                                                                       |
-| `endpoint`       | same-origin `/__field-notes`, else `http://localhost:4747`                   | `local` mode only                                                                           |
-| `token`          | auto-injected by the Vite plugin / script tag                                | required by the standalone sink                                                             |
-| `author`         | `local`: the sink's `git config user.name`; `export`: asked once, remembered | `string \| () => string` to override                                                        |
-| `types`          | `['bug', 'change', 'idea', 'question']`                                      | one-click chip; maps to labels downstream                                                   |
-| `hotkey`         | `Alt+Shift+F`                                                                | configurable; conflicts with the host are documented                                        |
-| `context`        | —                                                                            | `() => object \| Promise<object>`: app version, tenant, feature flags, store state …        |
-| `screenshot`     | `'dom'`                                                                      | `'dom' \| 'display' \| 'off'`                                                               |
-| `theme`          | `auto`                                                                       | light/dark follows `prefers-color-scheme`; override via `--field-notes-*` custom properties |
+| option           | default                                                                      | notes                                                                                                                                                                   |
+| ---------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trigger`        | `['button', 'hotkey']`                                                       | any of `'button' \| 'hotkey'`; the `api` is always available                                                                                                            |
+| `surface`        | `'popover'`; `'sheet'` if there's no button                                  | `'popover' \| 'sheet' \| 'side'`                                                                                                                                        |
+| `buttonPosition` | `bottom-right`                                                               | `top-left`, `top-right`, `bottom-left`, `bottom-right`                                                                                                                  |
+| `buttonOffset`   | `16`                                                                         | px from the corner: one number, or `{ x, y }`                                                                                                                           |
+| `mode`           | `'local'`                                                                    | `'local' \| 'export'`                                                                                                                                                   |
+| `endpoint`       | same-origin `/__field-notes`, else `http://localhost:4747`                   | `local` mode only                                                                                                                                                       |
+| `token`          | auto-injected by the Vite plugin / script tag                                | required by the standalone sink                                                                                                                                         |
+| `author`         | `local`: the sink's `git config user.name`; `export`: asked once, remembered | `string \| () => string` to override                                                                                                                                    |
+| `types`          | `['bug', 'change', 'idea', 'question']`                                      | one-click chip; maps to labels downstream                                                                                                                               |
+| `hotkey`         | `Alt+Shift+F`                                                                | configurable; conflicts with the host are documented                                                                                                                    |
+| `context`        | —                                                                            | `() => object \| Promise<object>`: app version, tenant, feature flags, store state …                                                                                    |
+| `screenshot`     | `'dom'`                                                                      | `'dom' \| 'display' \| 'off'`                                                                                                                                           |
+| `theme`          | `auto`                                                                       | light/dark follows `prefers-color-scheme`; override via `--field-notes-*` custom properties: `bg`, `fg`, `border`, `accent`, `radius`, `font`, `button-bg`, `button-fg` |
 
 ### Capture flow (built to keep you focused)
 

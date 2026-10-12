@@ -20,11 +20,11 @@ export const BUTTON_CSS = `
   place-items: center;
   overflow: visible;
   color: var(--field-notes-button-fg, #fff);
-  background: var(--field-notes-button-bg, #1f6feb);
+  background: var(--field-notes-button-bg, var(--field-notes-accent, #0969da));
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
   cursor: pointer;
 }
-.trigger:focus-visible { outline: 2px solid var(--field-notes-focus, #1f6feb); outline-offset: 2px; }
+.trigger:focus-visible { outline: 2px solid var(--field-notes-accent, #0969da); outline-offset: 2px; }
 `;
 
 // A pencil. Built with DOM calls, not innerHTML, which hosts enforcing

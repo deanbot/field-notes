@@ -161,9 +161,7 @@ await check('script tag and npm import on one page share a single widget', async
 
     await page.evaluate(() => (window as { esm?: { open(): Promise<void> } }).esm?.open());
     const dialogs = await page.evaluate(
-      () =>
-        document.querySelector('field-notes')?.shadowRoot?.querySelectorAll('[role="dialog"]')
-          .length,
+      () => document.querySelector('field-notes')?.shadowRoot?.querySelectorAll('dialog').length,
     );
     assert(dialogs === 1, `expected one open panel, got ${String(dialogs)}`);
 

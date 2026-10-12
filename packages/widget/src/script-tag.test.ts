@@ -38,6 +38,8 @@ describe('scriptOptions', () => {
     [{ offset: '8,24,1' }, {}],
     [{ offset: 'far' }, {}],
     [{ hotkey: 'Ctrl+K' }, { hotkey: 'Ctrl+K' }],
+    [{ surface: 'side' }, { surface: 'side' }],
+    [{ surface: 'drawer' }, {}],
   ])('%o → %o', (attrs, expected) => {
     expect(scriptOptions(tag(attrs))).toEqual(expected);
   });
