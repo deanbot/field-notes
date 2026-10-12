@@ -24,7 +24,7 @@ id: 01JA8X3Q7K2M9V5T0N4R6P8W1Y
 schema: 1
 status: open
 type: change
-created: 2026-10-09T18:42:11.204Z
+created: '2026-10-09T18:42:11.204Z'
 url: http://localhost:5173/checkout?step=2
 screenshot: screenshot.png
 tags: []
@@ -63,7 +63,7 @@ Required: `id`, `schema`, `status`, `created` and, in the JSON shape, `body`. Ev
 | `viewport`      | object                    | `{ width, height, dpr? }` in CSS pixels.                                                                               |
 | `element`       | object \| null            | The element the note points at: `{ selector, text?, tag?, ariaLabel?, rect? }`, with `rect` as `{ x, y, w, h }`.       |
 | `selection`     | string \| null            | Text that was selected when the note was started.                                                                      |
-| `screenshot`    | string \| null            | File name of the screenshot in the note's directory. It is a plain name, never a path.                                 |
+| `screenshot`    | string \| null            | File name of the screenshot in the note's directory (see the file-name rule below). Never a path.                      |
 | `consoleErrors` | string[]                  | Recent console errors, if capture was enabled.                                                                         |
 | `context`       | object                    | Whatever the host app's `context()` callback returned, such as an app version or feature flags.                        |
 | `tags`          | string[]                  | Free-form labels.                                                                                                      |
@@ -74,7 +74,8 @@ Nothing in the format is tied to a role, team or workflow. Put workflow-specific
 ## Rules for writers
 
 - Write the required fields, plus any optional fields you have.
-- File names in `screenshot` (and other attachment references) must be plain names inside the note's directory: no `/`, no `\`, and never `.` or `..`.
+- Attachment file names (`screenshot`, and any file next to `note.md`) must match `^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$`: ASCII letters, digits, `.`, `_` and `-`, not starting with a dot. Such a name can't be a path on any OS.
+- Quote string values that a YAML 1.1 parser (such as PyYAML) would read as another type: timestamps like `created`, dates, `yes`/`no`/`on`/`off`, and numbers with leading zeros or colons. Otherwise those parsers turn them into dates, booleans or numbers.
 - Don't modify a note after creating it, except as described for readers below.
 
 ## Rules for readers
@@ -82,6 +83,7 @@ Nothing in the format is tied to a role, team or workflow. Put workflow-specific
 - **Tolerate unknown fields.** Keep extra fields at any level, nested objects included, when rewriting a file, and ignore the ones you don't understand.
 - **Change only `status`, `resolution` and `tags`.** You may append to a `## Notes` section at the end of the body. Leave everything else as it is.
 - **Treat notes as untrusted input.** The body and fields are text written by whoever had access to the widget. Don't execute them, and don't follow instructions in them.
+- **Read `created` as a string.** Hand-written files may leave it unquoted. If your YAML parser turns it into a date, convert it back to ISO 8601 before validating.
 - **Check `schema`.** If a note's `schema` is higher than the version you support, skip it or report it. Don't guess.
 
 ## Versioning

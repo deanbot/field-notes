@@ -70,8 +70,19 @@ export interface Note extends NoteFrontmatter {
 
 const nonEmpty = z.string().check(z.minLength(1));
 
-/** A file name inside the note's directory: no separators, not `.` or `..`. */
-const attachmentName = z.string().check(z.regex(/^(?!\.\.?$)[^/\\\0]+$/));
+/**
+ * Allowed attachment file names: ASCII letters, digits, `.`, `_` and `-`, not
+ * starting with a dot, at most 128 characters. An allowlist, so a name can't be
+ * a path on any OS (`C:evil.png`, `a\\b`) or hide control characters.
+ */
+const ATTACHMENT_NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/;
+
+/** Whether `name` is an allowed attachment file name (see spec/SPEC.md). */
+export function isAttachmentName(name: string): boolean {
+  return ATTACHMENT_NAME.test(name);
+}
+
+const attachmentName = z.string().check(z.regex(ATTACHMENT_NAME));
 
 const rect = z.looseObject({ x: z.number(), y: z.number(), w: z.number(), h: z.number() });
 
@@ -143,7 +154,7 @@ export function noteJsonSchema(): Record<string, unknown> {
   const { $schema, ...rest } = z.toJSONSchema(note, { target: 'draft-2020-12' });
   return {
     $schema,
-    $id: 'https://github.com/deanbot/field-notes/blob/main/spec/note.schema.json',
+    $id: 'https://raw.githubusercontent.com/deanbot/field-notes/main/spec/note.schema.json',
     title: 'field-notes note',
     description: `A field-notes note (schema ${String(SCHEMA_VERSION)}): frontmatter fields plus the markdown body. See spec/SPEC.md.`,
     ...rest,

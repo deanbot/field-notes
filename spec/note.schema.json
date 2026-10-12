@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/deanbot/field-notes/blob/main/spec/note.schema.json",
+  "$id": "https://raw.githubusercontent.com/deanbot/field-notes/main/spec/note.schema.json",
   "title": "field-notes note",
   "description": "A field-notes note (schema 1): frontmatter fields plus the markdown body. See spec/SPEC.md.",
   "type": "object",
@@ -138,7 +138,7 @@
       "anyOf": [
         {
           "type": "string",
-          "pattern": "^(?!\\.\\.?$)[^/\\\\\\0]+$"
+          "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$"
         },
         {
           "type": "null"

@@ -3,6 +3,7 @@ export {
   NoteFrontmatterSchema,
   NoteSchema,
   SCHEMA_VERSION,
+  isAttachmentName,
   noteJsonSchema,
 } from './note.ts';
 export type {
