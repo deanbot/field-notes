@@ -3,7 +3,11 @@
 // what each file may contain, that a consumer's production build drops the
 // widget, and that the script-tag and npm builds share a page in a browser.
 // (The DOM types are for the callbacks that run in that page.)
-import { readFileSync, readdirSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { build, type Rolldown } from 'vite';
@@ -33,6 +37,20 @@ async function check(name: string, fn: () => void | Promise<void>): Promise<void
 
 const stub = read('index.js');
 const panelFile = files.find((file) => /^panel-.*\.js$/.test(file));
+const syncFile = files.find((file) => /^sync-.*\.js$/.test(file));
+
+/** A chunk and every chunk it imports statically, as one text. */
+function withImports(file: string, seen = new Set<string>()): string {
+  if (seen.has(file)) return '';
+  seen.add(file);
+  const code = read(file);
+  const imports = [...code.matchAll(/\bfrom\s*["'`]\.\/([^"'`]+)|\bimport\s*["'`]\.\/([^"'`]+)/g)];
+  return code + imports.map((m) => withImports(m[1] ?? m[2] ?? '', seen)).join('');
+}
+
+/** Whether the stub loads `file` with a dynamic import. */
+const lazyFromStub = (file: string): boolean =>
+  ['"', "'", '`'].some((q) => stub.includes(`import(${q}./${file}${q})`));
 const iife = read('widget.iife.js');
 
 console.log('check-dist');
@@ -59,12 +77,25 @@ await check('the stub leaves process.env.NODE_ENV for the consumer to resolve', 
 
 await check('the panel is a lazy chunk with Lit and Zod, without yaml or fflate', () => {
   assert(panelFile, 'no panel chunk');
-  const lazy = ['"', "'", '`'].some((q) => stub.includes(`import(${q}./${panelFile}${q})`));
-  assert(lazy, 'the stub does not lazy-load the panel');
-  const panel = read(panelFile);
+  assert(lazyFromStub(panelFile), 'the stub does not lazy-load the panel');
+  // With the chunks it imports: the outbox (and Zod with it) is shared with delivery.
+  const panel = withImports(panelFile);
   assert(panel.includes(LIT), 'Lit is not in the panel');
   assert(panel.includes(ZOD), 'zod/mini is not in the panel (note validation)');
   assert(!YAML.test(panel) && !panel.includes(FFLATE), 'yaml or fflate is in the panel');
+});
+
+await check('delivery is a lazy chunk without Lit, yaml or fflate', () => {
+  assert(syncFile, 'no sync chunk');
+  assert(lazyFromStub(syncFile), 'the stub does not lazy-load delivery');
+  const sync = withImports(syncFile);
+  assert(!sync.includes(LIT), 'Lit is in the delivery chunks');
+  assert(!YAML.test(sync) && !sync.includes(FFLATE), 'yaml or fflate is in the delivery chunks');
+});
+
+await check('the script-tag build has one token placeholder for `serve` to fill', () => {
+  const found = iife.split('{{field-notes-token}}').length - 1;
+  assert(found === 1, `expected one placeholder, found ${String(found)}`);
 });
 
 await check('the script-tag build is one classic script', () => {
@@ -178,6 +209,73 @@ await check('script tag and npm import on one page share a single widget', async
     assert(survives === true, "window.FieldNotes.unmount() tore down the page's own mount");
   } finally {
     await browser.close();
+  }
+});
+
+await check('a script tag from the built `serve` captures a note to disk', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'field-notes-check-dist-'));
+  const serve = spawn(
+    process.execPath,
+    [join(dist, 'cli.js'), 'serve', '--port', '0', '--dir', join(dir, '.field-notes')],
+    { stdio: ['ignore', 'pipe', 'inherit'] },
+  );
+  const browser = await chromium.launch();
+  const cleanups: (() => void)[] = [];
+  try {
+    const url = await new Promise<string>((done, fail) => {
+      let out = '';
+      serve.stdout.on('data', (chunk: Buffer) => {
+        out += chunk.toString();
+        const found = /http:\/\/127\.0\.0\.1:\d+/.exec(out);
+        if (found) done(found[0]);
+      });
+      serve.once('exit', (code) => {
+        fail(new Error(`serve exited (${String(code)}): ${out}`));
+      });
+    });
+    // The app's page, from a real loopback server (as a dev server is: Chrome
+    // only lets loopback pages reach loopback), on an origin the sink allows.
+    const appServer = createServer((_, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(
+        `<!doctype html><html><head><script src="${url}/widget.js"></script></head><body></body></html>`,
+      );
+    });
+    cleanups.push(() => appServer.close());
+    await new Promise<void>((done) => appServer.listen(0, '127.0.0.1', done));
+    const app = `http://localhost:${String((appServer.address() as AddressInfo).port)}`;
+    const page = await browser.newPage();
+    const problems: string[] = [];
+    page.on('console', (message) => problems.push(`${message.type()}: ${message.text()}`));
+    page.on('pageerror', (error) => problems.push(error.message));
+    page.on('requestfailed', (request) =>
+      problems.push(`${request.url()} ${request.failure()?.errorText ?? ''}`),
+    );
+    await page.goto(`${app}/`);
+    await page
+      .waitForFunction(() => document.querySelector('field-notes'), undefined, { timeout: 5000 })
+      .catch((error: unknown) => {
+        throw new Error(`${String(error)}\n${problems.join('\n')}`);
+      });
+    await page.evaluate(() =>
+      (window as { FieldNotes?: { open(): Promise<void> } }).FieldNotes?.open(),
+    );
+    await page.locator('field-notes textarea').fill('From the built script tag');
+    await page.keyboard.press('Control+Enter');
+    const items = join(dir, '.field-notes', 'items');
+    let stored: string[] = [];
+    for (let i = 0; i < 100 && stored.length === 0; i++) {
+      await new Promise((done) => setTimeout(done, 100));
+      stored = readdirSync(items);
+    }
+    assert(stored.length === 1, `expected one note on disk, found ${String(stored.length)}`);
+    const note = readFileSync(join(items, stored[0] ?? '', 'note.md'), 'utf8');
+    assert(note.includes('From the built script tag'), 'the note on disk is not the one sent');
+  } finally {
+    await browser.close();
+    for (const cleanup of cleanups) cleanup();
+    serve.kill();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

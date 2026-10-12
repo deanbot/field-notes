@@ -133,11 +133,32 @@ describe('mountFieldNotes', () => {
       remove.apply(this, args);
     });
 
-    const handle = mount({ enabled: true });
+    // The window's own methods aren't the prototype's here: watch them too.
+    const addToWindow = window.addEventListener.bind(window);
+    const removeFromWindow = window.removeEventListener.bind(window);
+    vi.spyOn(window, 'addEventListener').mockImplementation((...args) => {
+      const [type, listener, options] = args;
+      const signal = typeof options === 'object' ? options.signal : undefined;
+      added.push({ target: window, type, listener, signal });
+      addToWindow(...args);
+    });
+    vi.spyOn(window, 'removeEventListener').mockImplementation((...args) => {
+      const [type, listener] = args;
+      removed.push({ target: window, type, listener });
+      removeFromWindow(...args);
+    });
+
+    // A pending note and a token load delivery too, with its own listeners.
+    localStorage.setItem('field-notes:pending', '1');
+    const handle = mount({ enabled: true, token: 't', endpoint: '/no-sink-here' });
     await handle.open();
     handle.close();
     expect(added.length, 'the hotkey listens on the page').toBeGreaterThan(0);
+    await vi.waitFor(() => {
+      expect(added.map((entry) => entry.type)).toContain('online');
+    });
     handle.unmount();
+    localStorage.clear();
     handle.unmount();
 
     const live = added.filter(

@@ -109,6 +109,38 @@ try {
     assert(version === pkg.version, `expected ${pkg.version}, got ${version}`);
   });
 
+  check('bin serves the sink, /health and the widget script with a token', () => {
+    // A child script, since checks are synchronous: start `serve`, ask it, stop it.
+    const probe = `
+      import { spawn } from 'node:child_process';
+      const serve = spawn(${JSON.stringify(join(consumer, 'node_modules/.bin/field-notes'))},
+        ['serve', '--port', '0', '--dir', '.field-notes'], { stdio: ['ignore', 'pipe', 'inherit'] });
+      try {
+        const url = await new Promise((done, fail) => {
+          let out = '';
+          serve.stdout.on('data', (chunk) => {
+            out += chunk;
+            const found = /http:\\/\\/127\\.0\\.0\\.1:\\d+/.exec(out);
+            if (found) done(found[0]);
+          });
+          serve.once('exit', () => fail(new Error('serve exited: ' + out)));
+        });
+        const health = await (await fetch(url + '/health')).json();
+        const script = await (await fetch(url + '/widget.js')).text();
+        console.log(JSON.stringify({ health, script: script.slice(0, 20), placeholder: script.includes('{{field-notes-token}}') }));
+      } finally {
+        serve.kill();
+      }`;
+    const result = JSON.parse(run('node', ['--input-type=module', '-e', probe], consumer)) as {
+      health: { ok: boolean; version: string };
+      script: string;
+      placeholder: boolean;
+    };
+    assert(result.health.ok && result.health.version === pkg.version, '/health is wrong');
+    assert(result.script.startsWith('var FieldNotes='), '/widget.js is not the script-tag build');
+    assert(!result.placeholder, 'the token was not filled in');
+  });
+
   // Two compiles: the widget's types must not need Node's; the sink is a
   // Node API, so its consumers have them.
   const compile = (name: string, lines: string[], types: string[]): void => {

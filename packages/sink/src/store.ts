@@ -56,6 +56,24 @@ async function writeAtomic(dir: string, name: string, data: string | Uint8Array)
   await rename(temp, join(dir, name));
 }
 
+/** `.gitignore` for the sink's directory: nothing in it is tracked. */
+export const DEFAULT_GITIGNORE = '*\n';
+
+/**
+ * Creates `dir/items/`, and `dir/.gitignore` if there's none (never
+ * overwriting one the user edited). `false` writes no `.gitignore`.
+ */
+export async function setUpSinkDir(
+  dir: string,
+  gitignore: string | false = DEFAULT_GITIGNORE,
+): Promise<void> {
+  await mkdir(join(dir, 'items'), { recursive: true });
+  if (gitignore === false) return;
+  await writeFile(join(dir, '.gitignore'), gitignore, { flag: 'wx' }).catch((error: unknown) => {
+    if (!hasCode(error, 'EEXIST')) throw error;
+  });
+}
+
 export function createStore(root: string, options: StoreOptions): Store {
   const items = join(root, 'items');
   // Client ids are hashed, so client text never becomes a path.
@@ -63,17 +81,7 @@ export function createStore(root: string, options: StoreOptions): Store {
   const inFlight = new Map<string, Promise<Saved>>();
   let ready: Promise<void> | undefined;
 
-  const prepare = async (): Promise<void> => {
-    await mkdir(items, { recursive: true });
-    if (options.gitignore !== false) {
-      // `wx`: never overwrite one the user edited.
-      await writeFile(join(root, '.gitignore'), options.gitignore, { flag: 'wx' }).catch(
-        (error: unknown) => {
-          if (!hasCode(error, 'EEXIST')) throw error;
-        },
-      );
-    }
-  };
+  const prepare = (): Promise<void> => setUpSinkDir(root, options.gitignore);
 
   const write = async (
     fields: Readonly<Record<string, unknown>>,
