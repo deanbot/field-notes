@@ -17,7 +17,12 @@ export interface FieldNotesOptions {
   buttonPosition?: Corner | undefined;
   /** The button's distance from its corner, in px. Default `16`. */
   buttonOffset?: Offset | undefined;
-  /** Default `'Alt+Shift+F'`. Modifiers (`Alt`, `Ctrl`, `Meta`, `Shift`) plus one key. */
+  /**
+   * Default `'Alt+Shift+F'`. Modifiers (`Alt`, `Ctrl`, `Meta`, `Shift`) plus one
+   * key: a letter, digit, punctuation, `Space`, a `KeyboardEvent.code` name or
+   * a named key such as `F2`. Letters, digits and punctuation match by their
+   * US-layout position.
+   */
   hotkey?: string | undefined;
 }
 

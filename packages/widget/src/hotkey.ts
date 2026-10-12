@@ -4,7 +4,7 @@ export interface Hotkey {
   readonly ctrl: boolean;
   readonly meta: boolean;
   readonly shift: boolean;
-  /** `KeyboardEvent.code` for letters and digits, otherwise `KeyboardEvent.key`. */
+  /** `KeyboardEvent.code` for keys matched by position, otherwise `KeyboardEvent.key`. */
   readonly code?: string | undefined;
   readonly key?: string | undefined;
 }
@@ -21,9 +21,43 @@ const MODIFIERS = new Map<string, Modifier>([
   ['shift', 'shift'],
 ]);
 
+// Printable keys by their US-layout position. Shift and macOS Alt change
+// what these type (Shift+/ is `?`, Alt+. is `≥`), so they match by
+// `KeyboardEvent.code`, never by `key`.
+const PUNCTUATION = new Map([
+  ['`', 'Backquote'],
+  ['-', 'Minus'],
+  ['=', 'Equal'],
+  ['[', 'BracketLeft'],
+  [']', 'BracketRight'],
+  ['\\', 'Backslash'],
+  [';', 'Semicolon'],
+  ["'", 'Quote'],
+  [',', 'Comma'],
+  ['.', 'Period'],
+  ['/', 'Slash'],
+]);
+
+// `KeyboardEvent.code` names that may be written as the key, any case.
+const CODES = new Map(
+  [
+    ...PUNCTUATION.values(),
+    'Space',
+    ...'0123456789'.split('').map((d) => `Numpad${d}`),
+    'NumpadAdd',
+    'NumpadSubtract',
+    'NumpadMultiply',
+    'NumpadDivide',
+    'NumpadDecimal',
+  ].map((code) => [code.toLowerCase(), code]),
+);
+
 /**
  * Parses `Alt+Shift+F`-style text: any modifiers, then exactly one key.
- * Returns undefined when the text isn't a shortcut.
+ * Letters, digits, punctuation and `Space` match by physical key, as do
+ * `KeyboardEvent.code` names (`Slash`, `KeyQ`). Other names (`F2`, `Escape`)
+ * match by `KeyboardEvent.key`. Returns undefined when the text isn't a
+ * shortcut, including a character with no key position to match.
  */
 export function parseHotkey(text: string): Hotkey | undefined {
   const parts = text.split('+').map((part) => part.trim());
@@ -35,11 +69,20 @@ export function parseHotkey(text: string): Hotkey | undefined {
     if (!mod || mods[mod]) return undefined;
     mods[mod] = true;
   }
-  // Letters and digits match by physical key: with Alt held, macOS reports
-  // `event.key` as a symbol (Alt+Shift+F is `Ï`).
-  if (/^[a-z]$/i.test(last)) return { ...mods, code: `Key${last.toUpperCase()}` };
-  if (/^\d$/.test(last)) return { ...mods, code: `Digit${last}` };
+  const code = codeFor(last);
+  if (code) return { ...mods, code };
+  // A single character we can't place on a key would never match.
+  if (Array.from(last).length === 1) return undefined;
   return { ...mods, key: last.toLowerCase() };
+}
+
+function codeFor(key: string): string | undefined {
+  // With Alt held, macOS reports letters as symbols too (Alt+Shift+F is `Ï`).
+  const letter = /^(?:key)?([a-z])$/i.exec(key)?.[1];
+  if (letter) return `Key${letter.toUpperCase()}`;
+  const digit = /^(?:digit)?(\d)$/i.exec(key)?.[1];
+  if (digit) return `Digit${digit}`;
+  return PUNCTUATION.get(key) ?? CODES.get(key.toLowerCase());
 }
 
 export function matchesHotkey(hotkey: Hotkey, event: KeyboardEvent): boolean {

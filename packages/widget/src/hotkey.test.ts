@@ -9,14 +9,23 @@ describe('parseHotkey', () => {
     ['ctrl + 1', { ...none, ctrl: true, code: 'Digit1' }],
     ['Cmd+Option+n', { ...none, meta: true, alt: true, code: 'KeyN' }],
     ['Control+F2', { ...none, ctrl: true, key: 'f2' }],
+    ['Ctrl+Shift+/', { ...none, ctrl: true, shift: true, code: 'Slash' }],
+    ['Alt+.', { ...none, alt: true, code: 'Period' }],
+    ['Ctrl+Space', { ...none, ctrl: true, code: 'Space' }],
+    ['Alt+Slash', { ...none, alt: true, code: 'Slash' }],
+    ['Alt+keyq', { ...none, alt: true, code: 'KeyQ' }],
+    ['Shift+Numpad1', { ...none, shift: true, code: 'Numpad1' }],
     ['Escape', { ...none, key: 'escape' }],
   ])('%s', (text, expected) => {
     expect(parseHotkey(text)).toEqual(expected);
   });
 
-  it.each(['', 'Alt+', 'Alt+Alt+F', 'Hyper+F', 'constructor+F'])('rejects %j', (text) => {
-    expect(parseHotkey(text)).toBeUndefined();
-  });
+  it.each(['', 'Alt+', 'Alt+Alt+F', 'Hyper+F', 'constructor+F', 'Alt+é', 'Ctrl+§'])(
+    'rejects %j',
+    (text) => {
+      expect(parseHotkey(text)).toBeUndefined();
+    },
+  );
 });
 
 describe('matchesHotkey', () => {
@@ -35,6 +44,19 @@ describe('matchesHotkey', () => {
       false,
     );
     expect(press({ code: 'KeyG', key: 'G', altKey: true, shiftKey: true })).toBe(false);
+  });
+
+  it('matches punctuation and Space by physical key, whatever Shift or Alt types', () => {
+    const slash = parseHotkey('Ctrl+Shift+/');
+    const space = parseHotkey('Ctrl+Space');
+    const period = parseHotkey('Alt+.');
+    if (!slash || !space || !period) throw new Error('unparsed');
+    const ev = (init: KeyboardEventInit): KeyboardEvent => new KeyboardEvent('keydown', init);
+    expect(
+      matchesHotkey(slash, ev({ code: 'Slash', key: '?', ctrlKey: true, shiftKey: true })),
+    ).toBe(true);
+    expect(matchesHotkey(space, ev({ code: 'Space', key: ' ', ctrlKey: true }))).toBe(true);
+    expect(matchesHotkey(period, ev({ code: 'Period', key: '≥', altKey: true }))).toBe(true);
   });
 
   it('matches other keys by key, ignoring case', () => {

@@ -170,9 +170,19 @@ describe('hotkey', () => {
     });
   });
 
-  it('warns and stays off for a shortcut it cannot parse', () => {
+  // Playwright reports `/` here, not the `?` a real Shift types; hotkey.test.ts
+  // covers that rewrite with a dispatched event.
+  it('opens on punctuation from a real keyboard', async () => {
+    mount({ trigger: ['hotkey'], hotkey: 'Ctrl+Shift+/' });
+    await userEvent.keyboard('{Control>}{Shift>}/{/Shift}{/Control}');
+    await vi.waitFor(() => {
+      expect(isOpen()).toBe(true);
+    });
+  });
+
+  it.each(['Hyper+F', 'Ctrl+é'])('warns and stays off for %j', (hotkey) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    mount({ hotkey: 'Hyper+F' });
+    mount({ hotkey });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('the hotkey is off'));
     expect(pressHotkey().defaultPrevented).toBe(false);
   });
