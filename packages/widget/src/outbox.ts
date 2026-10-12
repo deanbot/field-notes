@@ -1,0 +1,267 @@
+// The outbox: every note is stored here (IndexedDB) before any transport
+// sees it, so notes survive reloads and a sink that's down. Part of the panel
+// chunk. It reports the pending count after every committed change, and the
+// stub mirrors it to localStorage for the badge.
+import { type Note, NoteSchema, isAttachmentName } from '@field-notes/core/note';
+import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
+import { type Attachments, type Receipt, type Transport, TransportError } from './transport.ts';
+
+/**
+ * `pending`: not delivered yet. `delivered`: a transport has it. `exported`:
+ * in a downloaded zip (export mode, #15).
+ */
+export type OutboxState = 'pending' | 'delivered' | 'exported';
+
+export interface OutboxEntry {
+  readonly id: string;
+  readonly note: Note;
+  readonly attachments: Attachments;
+  readonly state: OutboxState;
+  /** When it was added, in ms: the outbox's order. */
+  readonly added: number;
+  readonly receipt?: Receipt | undefined;
+  /** Failed sends so far. */
+  readonly attempts: number;
+  readonly lastError?: string | undefined;
+  /** Set when a transport rejected it for good; flush() skips it. */
+  readonly rejected?: boolean | undefined;
+}
+
+/** What the drawer may change. */
+export interface NoteEdit {
+  readonly body: string;
+  readonly type?: string | undefined;
+}
+
+export interface FlushResult {
+  readonly delivered: number;
+  /** Rejected for good and skipped. */
+  readonly rejected: number;
+  /** True when a retryable failure stopped the flush. */
+  readonly stopped: boolean;
+}
+
+export interface Outbox {
+  readonly add: (note: Note, attachments?: Attachments) => Promise<void>;
+  /** Every entry, oldest first. */
+  readonly list: () => Promise<OutboxEntry[]>;
+  readonly pendingCount: () => Promise<number>;
+  /** Changes a pending note; rejects for any other state. */
+  readonly edit: (id: string, edit: NoteEdit) => Promise<OutboxEntry>;
+  /** Forgets an entry, whatever its state. */
+  readonly remove: (id: string) => Promise<void>;
+  /** Sends pending notes, oldest first (see FlushResult). */
+  readonly flush: (transport: Transport) => Promise<FlushResult>;
+  readonly close: () => void;
+}
+
+// Attachments are stored as bytes, not Blobs: WebKit can't put a Blob in
+// IndexedDB in some contexts (private browsing), and bytes work everywhere.
+interface StoredAttachment {
+  readonly type: string;
+  readonly bytes: ArrayBuffer;
+}
+type StoredEntry = Omit<OutboxEntry, 'attachments'> & {
+  readonly attachments: Readonly<Record<string, StoredAttachment>>;
+};
+
+interface OutboxDB extends DBSchema {
+  entries: {
+    key: string;
+    value: StoredEntry;
+    indexes: { state: OutboxState };
+  };
+}
+
+async function toStored(attachments: Attachments): Promise<StoredEntry['attachments']> {
+  const pairs = await Promise.all(
+    Object.entries(attachments).map(async ([name, blob]): Promise<[string, StoredAttachment]> => [
+      name,
+      { type: blob.type, bytes: await blob.arrayBuffer() },
+    ]),
+  );
+  return Object.fromEntries(pairs);
+}
+
+function fromStored(entry: StoredEntry): OutboxEntry {
+  const attachments = Object.fromEntries(
+    Object.entries(entry.attachments).map(([name, { type, bytes }]) => [
+      name,
+      new Blob([bytes], { type }),
+    ]),
+  );
+  return { ...entry, attachments };
+}
+
+export const DB_NAME = 'field-notes';
+const DB_VERSION = 1;
+
+function checkAttachments(attachments: Attachments): void {
+  for (const name of Object.keys(attachments)) {
+    if (!isAttachmentName(name))
+      throw new TypeError(`bad attachment name: ${JSON.stringify(name)}`);
+  }
+}
+
+/**
+ * Opens the outbox lazily, on first use. Aborting `signal` (unmount) closes
+ * the connection. `changed` hears the pending count after every change.
+ */
+export function createOutbox(
+  signal: AbortSignal,
+  changed: (pending: number) => void = () => undefined,
+): Outbox {
+  let connection: Promise<IDBPDatabase<OutboxDB>> | undefined;
+
+  const db = (): Promise<IDBPDatabase<OutboxDB>> => {
+    if (signal.aborted) return Promise.reject(new DOMException('unmounted', 'AbortError'));
+    connection ??= openDB<OutboxDB>(DB_NAME, DB_VERSION, {
+      upgrade(database) {
+        const store = database.createObjectStore('entries', { keyPath: 'id' });
+        store.createIndex('state', 'state');
+      },
+      // Another copy of the widget (script tag and npm import) wants a newer
+      // version: let it upgrade, and reopen on next use.
+      blocking() {
+        close();
+      },
+      terminated() {
+        connection = undefined;
+      },
+    }).catch((error: unknown) => {
+      connection = undefined;
+      throw error;
+    });
+    return connection;
+  };
+
+  const close = (): void => {
+    const open = connection;
+    connection = undefined;
+    void open?.then(
+      (database) => {
+        database.close();
+      },
+      () => undefined,
+    );
+  };
+  signal.addEventListener('abort', close, { once: true });
+
+  const pendingCount = async (): Promise<number> =>
+    (await db()).countFromIndex('entries', 'state', 'pending');
+
+  // After a committed change, so the count never runs ahead of the database.
+  const committed = async (): Promise<void> => {
+    changed(await pendingCount());
+  };
+
+  const list = async (): Promise<OutboxEntry[]> => {
+    const all = await (await db()).getAll('entries');
+    return all.sort((a, b) => a.added - b.added).map(fromStored);
+  };
+
+  const update = async (
+    id: string,
+    change: (entry: StoredEntry) => StoredEntry | undefined,
+  ): Promise<StoredEntry | undefined> => {
+    const tx = (await db()).transaction('entries', 'readwrite');
+    // Awaited with the request, so an aborted transaction can't go unhandled.
+    const [next] = await Promise.all([
+      tx.store.get(id).then(async (entry) => {
+        const changed = entry && change(entry);
+        if (changed) await tx.store.put(changed);
+        return changed;
+      }),
+      tx.done,
+    ]);
+    return next;
+  };
+
+  return {
+    add: async (note, attachments = {}) => {
+      NoteSchema.parse(note);
+      checkAttachments(attachments);
+      // Read before the transaction: it would close while awaiting the bytes.
+      const stored = await toStored(attachments);
+      const tx = (await db()).transaction('entries', 'readwrite');
+      // Both at once: a failed add (a duplicate id) aborts the transaction,
+      // and tx.done must not reject unheard.
+      await Promise.all([
+        tx.store.add({
+          id: note.id,
+          note,
+          attachments: stored,
+          state: 'pending',
+          added: Date.now(),
+          attempts: 0,
+        }),
+        tx.done,
+      ]);
+      await committed();
+    },
+
+    list,
+    pendingCount: async () => {
+      const count = await pendingCount();
+      changed(count); // Lets a stale badge correct itself.
+      return count;
+    },
+
+    edit: async (id, edit) => {
+      let reason = 'not found';
+      const result = await update(id, (entry) => {
+        if (entry.state !== 'pending') {
+          reason = `already ${entry.state}`;
+          return undefined;
+        }
+        const note: Note = { ...entry.note, body: edit.body };
+        if (edit.type) note.type = edit.type;
+        else delete note.type;
+        // The same rules as a new note; id and created stay as they were.
+        return { ...entry, note: NoteSchema.parse(note) };
+      });
+      if (!result) throw new Error(`can't edit note ${id}: ${reason}`);
+      return fromStored(result);
+    },
+
+    remove: async (id) => {
+      const tx = (await db()).transaction('entries', 'readwrite');
+      await Promise.all([tx.store.delete(id), tx.done]);
+      await committed();
+    },
+
+    flush: async (send) => {
+      let delivered = 0;
+      let rejected = 0;
+      for (const entry of await list()) {
+        if (entry.state !== 'pending' || entry.rejected) continue;
+        try {
+          const receipt = await send(entry.note, entry.attachments);
+          // Removed or changed meanwhile? Then leave it as it is.
+          await update(entry.id, (current) =>
+            current.state === 'pending' ? { ...current, state: 'delivered', receipt } : undefined,
+          );
+          delivered++;
+        } catch (error) {
+          const retryable = !(error instanceof TransportError) || error.retryable;
+          const lastError = error instanceof Error ? error.message : String(error);
+          await update(entry.id, (current) => ({
+            ...current,
+            attempts: current.attempts + 1,
+            lastError,
+            ...(retryable ? {} : { rejected: true }),
+          }));
+          if (retryable) {
+            await committed();
+            return { delivered, rejected, stopped: true };
+          }
+          rejected++;
+        }
+      }
+      await committed();
+      return { delivered, rejected, stopped: false };
+    },
+
+    close,
+  };
+}

@@ -2,7 +2,7 @@
   {
     "name": "widget entry (activation stub)",
     "path": "packages/field-notes/dist/index.js",
-    "limit": "3 kB",
+    "limit": "3.5 kB",
     "gzip": true
   },
   {

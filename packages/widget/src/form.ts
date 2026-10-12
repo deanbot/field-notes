@@ -8,6 +8,13 @@ import type { FieldNotesOptions } from './mount.ts';
 
 const DEFAULT_TYPES: readonly string[] = ['bug', 'change', 'idea', 'question'];
 
+/** The note types on offer: `types`, or the defaults, without blanks. */
+export function resolveTypes(options: FieldNotesOptions): string[] {
+  return (options.types ?? DEFAULT_TYPES).filter(
+    (type) => typeof type === 'string' && type.trim() !== '',
+  );
+}
+
 export interface FormDeps {
   readonly options: FieldNotesOptions;
   /** The page's selection when the widget opened. */
@@ -35,9 +42,7 @@ const isMac = (): boolean => /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 export function createForm(deps: FormDeps): Form {
   const { options } = deps;
-  const types = (options.types ?? DEFAULT_TYPES).filter(
-    (type) => typeof type === 'string' && type.trim() !== '',
-  );
+  const types = resolveTypes(options);
   const draft = loadDraft();
   let text = draft?.text ?? '';
   let type = draft?.type && types.includes(draft.type) ? draft.type : undefined;

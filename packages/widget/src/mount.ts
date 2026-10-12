@@ -1,11 +1,11 @@
 import { type Enabled, isEnabled } from './activation.ts';
-import { BUTTON_CSS, type Corner, type Offset, createButton } from './button.ts';
-import { deliver } from './deliver.ts';
+import { BUTTON_CSS, type Corner, type Offset, createButton, setBadge } from './button.ts';
 import { HANDLE_KEY, TAG_NAME, defineShell } from './element.ts';
 import { matchesHotkey, parseHotkey } from './hotkey.ts';
 import { isEditableTarget } from './keyboard.ts';
 import type * as ConsoleModule from './console-errors.ts';
 import type * as PanelModule from './panel.ts';
+import { PENDING_KEY, readPending, writePending } from './pending.ts';
 import type { Surface } from './panel.ts';
 
 /** What opens the widget. The API (`open()`, `close()`, `toggle()`) always works. */
@@ -139,6 +139,10 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
     ? createButton(corner, options.buttonOffset ?? 16)
     : undefined;
   const surface = options.surface ?? (button ? 'popover' : 'sheet');
+  // A sync storage read, not IndexedDB: mounting stays cheap.
+  const refreshBadge = (): void => {
+    if (button) setBadge(button, readPending());
+  };
   const expanded = (open: boolean): void => {
     button?.setAttribute('aria-expanded', String(open));
   };
@@ -197,7 +201,10 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
         options,
         selection,
         consoleErrors: () => errors?.snapshot(),
-        deliver,
+        pendingChanged: (pending: number) => {
+          writePending(pending);
+          refreshBadge();
+        },
         signal,
         close: handle.close,
       });
@@ -227,6 +234,15 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
   if (button) {
     button.addEventListener('click', () => void handle.toggle(), { signal });
     root.append(button);
+    refreshBadge();
+    // Other tabs share the outbox; their changes arrive as storage events.
+    addEventListener(
+      'storage',
+      (event) => {
+        if (event.key === PENDING_KEY || event.key === null) refreshBadge();
+      },
+      { signal },
+    );
   }
   if (hotkey) {
     document.addEventListener(

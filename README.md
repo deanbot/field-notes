@@ -11,7 +11,7 @@ Notes are saved as plain files in your project (`.field-notes/items/<id>/note.md
 ## Highlights (planned for 1.0)
 
 - **Framework-agnostic.** One custom element in its own Shadow DOM. It works in React, Vue, Svelte, Solid, Angular, server-rendered apps and plain HTML, without touching your app's UI stack or styles.
-- **Light.** About 3 KB until it's first opened. Zero runtime dependencies.
+- **Light.** About 3.5 KB until it's first opened. Zero runtime dependencies.
 - **Local-first.** Notes go to a tiny local server, Vite plugin or dev middleware that writes them into your repo. Or keep them in the browser and export a zip, which is handy for demo and staging builds.
 - **Context included.** URL, route, viewport, selected text, a picked element's selector, an optional screenshot, plus anything your app adds.
 - **Readable by people and tools.** Markdown with YAML frontmatter and a published JSON Schema, plus a CLI to list, filter, resolve and export notes.

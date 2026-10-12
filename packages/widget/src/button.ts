@@ -25,6 +25,20 @@ export const BUTTON_CSS = `
   cursor: pointer;
 }
 .trigger:focus-visible { outline: 2px solid var(--field-notes-accent, #0969da); outline-offset: 2px; }
+.badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font: 600 11px/18px system-ui, sans-serif;
+  color: #fff;
+  background: var(--field-notes-badge-bg, #cf222e);
+}
+.badge:empty { display: none; }
 `;
 
 // A pencil. Built with DOM calls, not innerHTML, which hosts enforcing
@@ -51,6 +65,16 @@ function icon(): SVGSVGElement {
   return svg;
 }
 
+/** Shows the pending count on the button; the label says it for screen readers. */
+export function setBadge(button: HTMLButtonElement, pending: number): void {
+  const badge = button.lastElementChild;
+  if (badge) badge.textContent = pending ? String(pending) : '';
+  button.setAttribute(
+    'aria-label',
+    pending ? `Field notes, ${String(pending)} pending` : 'Field notes',
+  );
+}
+
 export function createButton(corner: Corner, offset: Offset): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
@@ -58,7 +82,10 @@ export function createButton(corner: Corner, offset: Offset): HTMLButtonElement 
   button.part = 'button';
   button.setAttribute('aria-label', 'Field notes');
   button.setAttribute('aria-expanded', 'false');
-  button.append(icon());
+  const badge = document.createElement('span');
+  badge.className = 'badge';
+  badge.setAttribute('aria-hidden', 'true');
+  button.append(icon(), badge);
   const { x, y } = typeof offset === 'number' ? { x: offset, y: offset } : offset;
   const [vertical, horizontal] = corner.split('-') as ['top' | 'bottom', 'left' | 'right'];
   button.style.setProperty(vertical, `${String(y)}px`);

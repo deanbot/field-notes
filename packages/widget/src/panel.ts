@@ -3,15 +3,20 @@
 // this chunk registers a custom element.
 import { html, nothing, render } from 'lit/html.js';
 import type { Corner } from './button.ts';
-import { type FormDeps, createForm } from './form.ts';
+import { deliver } from './deliver.ts';
+import { createDrawer } from './drawer.ts';
+import { type FormDeps, createForm, resolveTypes } from './form.ts';
+import { type Outbox, createOutbox } from './outbox.ts';
 
 /** The layout the panel opens in. All of them share one form. */
 export type Surface = 'popover' | 'sheet' | 'side';
 
 export interface PanelView extends Pick<
   FormDeps,
-  'options' | 'selection' | 'consoleErrors' | 'deliver' | 'signal'
+  'options' | 'selection' | 'consoleErrors' | 'signal'
 > {
+  /** Hears the outbox's pending count: the stub mirrors it and updates the badge. */
+  readonly pendingChanged: (pending: number) => void;
   readonly surface: Surface;
   /** Where the trigger button is, for the popover to anchor to. */
   readonly anchor?: { readonly rect: DOMRect; readonly corner: Corner } | undefined;
@@ -133,6 +138,23 @@ textarea:focus-visible, .chip input:focus-visible + span, .primary:focus-visible
   cursor: pointer;
 }
 .primary:disabled { opacity: 0.6; cursor: default; }
+header .link { margin-left: auto; }
+.link {
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--_accent);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.link:focus-visible { outline: 2px solid var(--_accent); outline-offset: 1px; }
+.entries { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.entry { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--_border); border-radius: 6px; }
+.summary { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.meta { margin: 0; font-size: 12px; opacity: 0.8; }
+select { font: inherit; color: inherit; background: var(--_bg); border: 1px solid var(--_border); border-radius: 6px; padding: 4px; }
 .toast {
   --_bg: var(--field-notes-bg, light-dark(#fff, #1e1e1e));
   --_fg: var(--field-notes-fg, light-dark(#1a1a1a, #f0f0f0));
@@ -156,14 +178,20 @@ textarea:focus-visible, .chip input:focus-visible + span, .primary:focus-visible
 interface Hosts {
   readonly surface: HTMLElement;
   readonly toast: HTMLElement;
+  /** One per mount; closed on unmount. */
+  readonly outbox: Outbox;
+  /** Pending notes, for the "My notes" button. */
+  pending: number;
+  /** Redraws the open panel, if any. */
+  redraw?: (() => void) | undefined;
   timer?: ReturnType<typeof setTimeout>;
   /** Detaches the open form, so a submit still in flight can't touch the next one. */
   dispose?: (() => void) | undefined;
 }
 const hosts = new WeakMap<ShadowRoot, Hosts>();
 
-function hostsFor(root: ShadowRoot, signal: AbortSignal): Hosts {
-  let found = hosts.get(root);
+function hostsFor(root: ShadowRoot, view: PanelView): Hosts {
+  const found = hosts.get(root);
   if (found) return found;
   const surface = document.createElement('div');
   const toast = document.createElement('div');
@@ -171,13 +199,21 @@ function hostsFor(root: ShadowRoot, signal: AbortSignal): Hosts {
   toast.setAttribute('role', 'status');
   toast.popover = 'manual';
   root.append(surface, toast);
-  found = { surface, toast };
-  const created = found;
-  signal.addEventListener('abort', () => {
+  const created: Hosts = {
+    surface,
+    toast,
+    pending: 0,
+    outbox: createOutbox(view.signal, (pending) => {
+      created.pending = pending;
+      view.pendingChanged(pending);
+      created.redraw?.();
+    }),
+  };
+  view.signal.addEventListener('abort', () => {
     clearTimeout(created.timer);
   });
-  hosts.set(root, found);
-  return found;
+  hosts.set(root, created);
+  return created;
 }
 
 function showToast(target: Hosts, message: string): void {
@@ -224,7 +260,7 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   if (!root.adoptedStyleSheets.includes(sheet)) {
     root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
   }
-  const target = hostsFor(root, view.signal);
+  const target = hostsFor(root, view);
   // A popover with no button to anchor to opens as a sheet.
   const surface = view.surface === 'popover' && !view.anchor ? 'sheet' : view.surface;
   const onClick = (event: MouseEvent): void => {
@@ -252,11 +288,22 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   target.dispose = () => {
     disposed = true;
   };
+  const redraw = (): void => {
+    if (!disposed) draw();
+  };
+  target.redraw = redraw;
+  let mode: 'form' | 'notes' = 'form';
+  const drawer = createDrawer({ outbox: target.outbox, types: resolveTypes(view.options), redraw });
+  const showMode = (next: 'form' | 'notes'): void => {
+    mode = next;
+    if (mode === 'notes') void drawer.load();
+    redraw();
+    root.getElementById('field-notes-mode')?.focus();
+  };
   const form = createForm({
     ...view,
-    redraw: () => {
-      if (!disposed) draw();
-    },
+    deliver: (note) => deliver(note, target.outbox),
+    redraw,
     focusText: () => {
       root.getElementById('field-notes-text')?.focus();
     },
@@ -274,13 +321,38 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
         aria-labelledby="field-notes-title"
         @close=${onClose}
         @click=${onClick}
-        @keydown=${form.keydown}
+        @keydown=${(event: KeyboardEvent) => {
+          if (mode === 'form') form.keydown(event);
+        }}
       >
         <header>
           <h2 id="field-notes-title">Field notes</h2>
+          ${
+            mode === 'form'
+              ? html`<button
+                  type="button"
+                  id="field-notes-mode"
+                  class="link"
+                  @click=${() => {
+                    showMode('notes');
+                  }}
+                >
+                  My notes${target.pending ? ` (${String(target.pending)} not sent)` : ''}
+                </button>`
+              : html`<button
+                  type="button"
+                  id="field-notes-mode"
+                  class="link"
+                  @click=${() => {
+                    showMode('form');
+                  }}
+                >
+                  New note
+                </button>`
+          }
           <button type="button" class="close" aria-label="Close" @click=${view.close}>×</button>
         </header>
-        ${form.template()}
+        ${mode === 'form' ? form.template() : drawer.template()}
       </dialog>`,
       target.surface,
     );
@@ -297,6 +369,12 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   const text = root.getElementById('field-notes-text');
   if (text instanceof HTMLTextAreaElement)
     text.setSelectionRange(text.value.length, text.value.length);
+  // Recount from IndexedDB: corrects a stale badge, and fills in the count
+  // when there's no button to show it on.
+  // The count arrives through the outbox's change callback.
+  target.outbox.pendingCount().catch((error: unknown) => {
+    console.warn('[field-notes] could not read the outbox.', error);
+  });
 }
 
 export function hidePanel(root: ShadowRoot): void {
@@ -304,6 +382,7 @@ export function hidePanel(root: ShadowRoot): void {
   if (!target) return;
   target.dispose?.();
   target.dispose = undefined;
+  target.redraw = undefined;
   const dialog = target.surface.querySelector('dialog');
   if (dialog?.open) dialog.close();
   render(nothing, target.surface);
