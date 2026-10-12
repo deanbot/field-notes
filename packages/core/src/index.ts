@@ -1,5 +1,18 @@
-/** Version of the on-disk note format. Bumped only for breaking changes. */
-export const SCHEMA_VERSION = 1;
+export {
+  NOTE_STATUSES,
+  NoteFrontmatterSchema,
+  NoteSchema,
+  SCHEMA_VERSION,
+  noteJsonSchema,
+} from './note.ts';
+export type {
+  Note,
+  NoteElement,
+  NoteFrontmatter,
+  NoteRect,
+  NoteStatus,
+  NoteViewport,
+} from './note.ts';
 
 const MAX_SLUG_LENGTH = 48;
 

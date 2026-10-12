@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/deanbot/field-notes/blob/main/spec/note.schema.json",
+  "title": "field-notes note",
+  "description": "A field-notes note (schema 1): frontmatter fields plus the markdown body. See spec/SPEC.md.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema": {
+      "type": "number",
+      "const": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "resolved",
+        "wontfix"
+      ]
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "author": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "route": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "referrer": {
+      "type": "string"
+    },
+    "userAgent": {
+      "type": "string"
+    },
+    "colorScheme": {
+      "type": "string"
+    },
+    "timezone": {
+      "type": "string"
+    },
+    "viewport": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "dpr": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "additionalProperties": {}
+    },
+    "element": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "selector": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "ariaLabel": {
+              "type": "string"
+            },
+            "rect": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "w": {
+                  "type": "number"
+                },
+                "h": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y",
+                "w",
+                "h"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "selector"
+          ],
+          "additionalProperties": {}
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "selection": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "screenshot": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(?!\\.\\.?$)[^/\\\\\\0]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "consoleErrors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "context": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "resolution": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "body": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "schema",
+    "status",
+    "created",
+    "body"
+  ],
+  "additionalProperties": {}
+}
