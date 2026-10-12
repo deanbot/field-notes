@@ -1,5 +1,5 @@
 import axe from 'axe-core';
-import { userEvent } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TAG_NAME } from './element.ts';
 import { type FieldNotesHandle, type FieldNotesOptions, mountFieldNotes } from './mount.ts';
@@ -210,6 +210,28 @@ describe('layout', () => {
     expect(box.top).toBeGreaterThanOrEqual(btn.bottom);
     expect(Math.round(box.left)).toBe(Math.round(btn.left));
   });
+
+  it.each(['bottom-right', 'top-left'] as const)(
+    'keeps a tall popover on screen from a %s button',
+    async (buttonPosition) => {
+      await page.viewport(480, 320);
+      try {
+        await mount({ buttonPosition }).open();
+        const filler = document.createElement('div');
+        filler.style.height = '2000px';
+        openDialog().querySelector('.body')?.append(filler);
+        const box = openDialog().getBoundingClientRect();
+        const btn = button()?.getBoundingClientRect();
+        if (!btn) throw new Error('no button');
+        expect(box.top).toBeGreaterThanOrEqual(0);
+        expect(box.bottom).toBeLessThanOrEqual(document.documentElement.clientHeight);
+        // Still clear of the button it's anchored to.
+        expect(box.bottom <= btn.top || box.top >= btn.bottom).toBe(true);
+      } finally {
+        await page.viewport(414, 896);
+      }
+    },
+  );
 
   it('keeps the popover open on a click inside it', async () => {
     await mount().open();

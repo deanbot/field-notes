@@ -42,7 +42,6 @@ const css = `
 .surface::backdrop { background: transparent; }
 .popover {
   width: min(360px, calc(100vw - 16px));
-  max-height: calc(100vh - 16px);
   border-radius: var(--_radius);
 }
 .sheet {
@@ -93,11 +92,20 @@ function anchorTo(
   dialog: HTMLDialogElement,
   { rect, corner }: NonNullable<PanelView['anchor']>,
 ): void {
-  const gap = 8;
+  const gap = 8; // from the button, and from the far edge of the viewport
   const { clientWidth, clientHeight } = document.documentElement;
   const [vertical, horizontal] = corner.split('-');
-  if (vertical === 'bottom') dialog.style.bottom = `${String(clientHeight - rect.top + gap)}px`;
-  else dialog.style.top = `${String(rect.bottom + gap)}px`;
+  // Only the space between the button and the far edge is available: the
+  // popover scrolls inside that rather than running off screen.
+  let room: number;
+  if (vertical === 'bottom') {
+    dialog.style.bottom = `${String(clientHeight - rect.top + gap)}px`;
+    room = rect.top - 2 * gap;
+  } else {
+    dialog.style.top = `${String(rect.bottom + gap)}px`;
+    room = clientHeight - rect.bottom - 2 * gap;
+  }
+  dialog.style.maxHeight = `${String(Math.max(room, 0))}px`;
   if (horizontal === 'right') dialog.style.right = `${String(clientWidth - rect.right)}px`;
   else dialog.style.left = `${String(rect.left)}px`;
 }
