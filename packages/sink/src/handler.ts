@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { isAttachmentName } from '@field-notes/core';
 import { DEFAULT_ALLOWED_ORIGINS, isAllowedOrigin } from './origin.ts';
-import { InvalidNoteError, createStore } from './store.ts';
+import { DEFAULT_GITIGNORE, InvalidNoteError, createStore } from './store.ts';
 
 /** Where the sink takes notes, on its own server or mounted on a dev server. */
 export const SINK_PATH = '/__field-notes';
@@ -192,7 +192,7 @@ export function createSinkHandler(options: SinkOptions): SinkHandler {
   const allowed = options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
   const token = digest(options.token);
-  const store = createStore(root, { gitignore: options.gitignore ?? '*\n' });
+  const store = createStore(root, { gitignore: options.gitignore ?? DEFAULT_GITIGNORE });
   let author: Promise<string | undefined> | undefined;
   const defaultAuthor = (): Promise<string | undefined> => {
     const configured = options.defaultAuthor;

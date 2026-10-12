@@ -261,13 +261,92 @@ describe('outbox flush', () => {
       return fake.transport(n, a);
     };
     expect(await outbox.flush(picky)).toEqual({ delivered: 1, rejected: 1, stopped: false });
+    // By id: both were added in the same millisecond, so list order is a tie.
     const entries = await outbox.list();
-    expect(entries[0]).toMatchObject({
+    expect(entries.find((entry) => entry.id === bad.id)).toMatchObject({
       state: 'pending',
       rejected: true,
       lastError: 'rejected by the sink',
     });
     expect(await outbox.flush(picky)).toEqual({ delivered: 0, rejected: 0, stopped: false });
+  });
+});
+
+describe('editing a note a send was tried for', () => {
+  it('gives it a new id, so a resend is not answered with the old text', async () => {
+    const outbox = open();
+    const tried = note('first try');
+    await outbox.add(tried);
+    await outbox.flush(() => Promise.reject(new TransportError('timed out', { retryable: true })));
+    const edited = await outbox.edit(tried.id, { body: 'edited', type: 'bug' });
+    expect(edited.id).not.toBe(tried.id);
+    expect(edited.note).toMatchObject({
+      id: edited.id,
+      body: 'edited',
+      type: 'bug',
+      created: tried.created,
+    });
+    expect(edited).toMatchObject({ attempts: 0, added: expect.any(Number) as number });
+    expect(edited.lastError).toBeUndefined();
+    const entries = await outbox.list();
+    expect(entries.map((e) => e.id)).toEqual([edited.id]);
+    // It keeps its place in the queue.
+    const sink = fakeTransport();
+    await outbox.flush(sink.transport);
+    expect((await sink.stored()).map((e) => e.note.id)).toEqual([edited.id]);
+  });
+
+  it('lets a note rejected for good be fixed and sent again', async () => {
+    const outbox = open();
+    const bad = note('bad');
+    await outbox.add(bad);
+    await outbox.flush(() => Promise.reject(new TransportError('nope', { retryable: false })));
+    const fixed = await outbox.edit(bad.id, { body: 'fixed' });
+    expect(fixed.rejected).toBeUndefined();
+    expect(await outbox.flush(fakeTransport().transport)).toMatchObject({ delivered: 1 });
+  });
+
+  it('keeps the id of a note no send was tried for', async () => {
+    const outbox = open();
+    const fresh = note('fresh');
+    await outbox.add(fresh);
+    expect((await outbox.edit(fresh.id, { body: 'edited' })).id).toBe(fresh.id);
+  });
+});
+
+describe('outbox prune', () => {
+  it('forgets delivered notes older than the given age, and nothing else', async () => {
+    const outbox = open();
+    const old = note('old');
+    const recent = note('recent');
+    const waiting = note('waiting');
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now - 10_000);
+    await outbox.add(old);
+    await outbox.flush(fakeTransport().transport);
+    clock.mockReturnValue(now);
+    await outbox.add(recent);
+    await outbox.flush(fakeTransport().transport);
+    clock.mockReturnValue(now + 1);
+    await outbox.add(waiting);
+    await outbox.prune(5_000);
+    expect((await outbox.list()).map((e) => e.note.body)).toEqual(['recent', 'waiting']);
+  });
+
+  it('falls back to when it was added for a note delivered before deliveredAt existed', async () => {
+    const outbox = open();
+    await outbox.add(note('legacy'));
+    await outbox.flush(fakeTransport().transport);
+    const database = await openDB(DB_NAME);
+    const [stored] = (await database.getAll('entries')) as Record<string, unknown>[];
+    await database.put('entries', {
+      ...stored,
+      deliveredAt: undefined,
+      added: Date.now() - 10_000,
+    });
+    database.close();
+    await outbox.prune(5_000);
+    expect(await outbox.list()).toEqual([]);
   });
 });
 

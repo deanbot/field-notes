@@ -38,7 +38,8 @@ function parseOffset(text: string): Offset | undefined {
  * Options from the script tag's `data-*` attributes: `data-enabled`
  * (`true`/`false`), `data-trigger` (`"button hotkey"`, or empty for API only),
  * `data-position` (a corner), `data-offset` (`16` or `8,24`), `data-surface`
- * (`popover`, `sheet` or `side`) and `data-hotkey`.
+ * (`popover`, `sheet` or `side`), `data-hotkey`, `data-endpoint` and
+ * `data-token`.
  * Values it doesn't recognise are ignored.
  */
 export function scriptOptions(script: HTMLOrSVGScriptElement | null): FieldNotesOptions {
@@ -57,12 +58,26 @@ export function scriptOptions(script: HTMLOrSVGScriptElement | null): FieldNotes
   if (offset !== undefined) options.buttonOffset = offset;
   if (data.surface && SURFACES.includes(data.surface)) options.surface = data.surface as Surface;
   if (data.hotkey) options.hotkey = data.hotkey;
+  if (data.endpoint) options.endpoint = data.endpoint;
+  if (data.token) options.token = data.token;
   return options;
 }
 
-/** Mounts from a script tag once the document has a body, and returns its API. */
-export function startScriptTag(script: HTMLOrSVGScriptElement | null): ScriptApi {
-  const defaults = scriptOptions(script);
+/**
+ * Mounts from a script tag once the document has a body, and returns its API.
+ * `injectedToken` is the token `field-notes serve` wrote into the script it
+ * served; notes then go to the server the script came from.
+ */
+export function startScriptTag(
+  script: HTMLOrSVGScriptElement | null,
+  injectedToken?: string,
+): ScriptApi {
+  const src = script && 'src' in script ? script.src : '';
+  const defaults: FieldNotesOptions = {
+    ...(src ? { endpoint: new URL('/__field-notes', src).href } : {}),
+    ...(injectedToken ? { token: injectedToken } : {}),
+    ...scriptOptions(script),
+  };
   let handle: FieldNotesHandle | undefined;
   let owned = false; // false when `handle` is a mount the page made
   // Cancels the mount that waits for the document, once any call overrides it.

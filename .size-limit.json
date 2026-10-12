@@ -6,15 +6,21 @@
     "gzip": true
   },
   {
-    "name": "widget panel (lazy chunk)",
-    "path": "packages/field-notes/dist/panel-*.js",
+    "name": "widget panel (lazy: the panel chunk and the outbox chunk it shares with delivery)",
+    "path": ["packages/field-notes/dist/panel-*.js", "packages/field-notes/dist/outbox-*.js"],
     "limit": "20 kB",
     "gzip": true
   },
   {
-    "name": "script-tag build (stub and panel)",
+    "name": "delivery (lazy: the sync chunk and the outbox chunk)",
+    "path": ["packages/field-notes/dist/sync-*.js", "packages/field-notes/dist/outbox-*.js"],
+    "limit": "12 kB",
+    "gzip": true
+  },
+  {
+    "name": "script-tag build (stub, panel and delivery)",
     "path": "packages/field-notes/dist/widget.iife.js",
-    "limit": "23 kB",
+    "limit": "24 kB",
     "gzip": true
   }
 ]

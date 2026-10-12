@@ -2,6 +2,7 @@
 // sees it, so notes survive reloads and a sink that's down. Part of the panel
 // chunk. It reports the pending count after every committed change, and the
 // stub mirrors it to localStorage for the badge.
+import { ulid } from '@field-notes/core/id';
 import { type Note, NoteSchema, isAttachmentName } from '@field-notes/core/note';
 import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
 import { type Attachments, type Receipt, type Transport, TransportError } from './transport.ts';
@@ -20,6 +21,8 @@ export interface OutboxEntry {
   /** When it was added, in ms: the outbox's order. */
   readonly added: number;
   readonly receipt?: Receipt | undefined;
+  /** When a transport took it (ms). */
+  readonly deliveredAt?: number | undefined;
   /** Failed sends so far. */
   readonly attempts: number;
   readonly lastError?: string | undefined;
@@ -62,12 +65,17 @@ export interface Outbox {
   /** Every entry, oldest first. */
   readonly list: () => Promise<OutboxEntry[]>;
   readonly pendingCount: () => Promise<number>;
-  /** Changes a pending note; rejects for any other state. */
+  /**
+   * Changes a pending note; rejects for any other state. A note a send was
+   * already tried for gets a new id (see the comment in `edit`).
+   */
   readonly edit: (id: string, edit: NoteEdit) => Promise<OutboxEntry>;
   /** Forgets an entry, whatever its state. */
   readonly remove: (id: string) => Promise<void>;
   /** Sends pending notes, oldest first (see FlushResult). */
   readonly flush: (transport: Transport) => Promise<FlushResult>;
+  /** Forgets delivered notes delivered more than `age` ms ago. */
+  readonly prune: (age: number) => Promise<void>;
   readonly close: () => void;
 }
 
@@ -128,6 +136,8 @@ export function createOutbox(
   changed: (pending: number) => void = () => undefined,
 ): Outbox {
   let connection: Promise<IDBPDatabase<OutboxDB>> | undefined;
+  // Strictly increasing, so two notes added in one millisecond keep their order.
+  let lastAdded = 0;
 
   const db = (): Promise<IDBPDatabase<OutboxDB>> => {
     if (signal.aborted) return Promise.reject(new DOMException('unmounted', 'AbortError'));
@@ -199,6 +209,8 @@ export function createOutbox(
       checkAttachments(attachments);
       // Read before the transaction: it would close while awaiting the bytes.
       const stored = await toStored(attachments);
+      const added = Math.max(Date.now(), lastAdded + 1);
+      lastAdded = added;
       const tx = (await db()).transaction('entries', 'readwrite');
       // Both at once: a failed add (a duplicate id) aborts the transaction,
       // and tx.done must not reject unheard.
@@ -208,7 +220,7 @@ export function createOutbox(
           note,
           attachments: stored,
           state: 'pending',
-          added: Date.now(),
+          added,
           attempts: 0,
         }),
         tx.done,
@@ -224,22 +236,46 @@ export function createOutbox(
     },
 
     edit: async (id, edit) => {
+      const tx = (await db()).transaction('entries', 'readwrite');
       let reason = 'not found';
-      const result = await update(id, (entry) => {
-        if (entry.state !== 'pending') {
-          reason = `already ${entry.state}`;
-          return undefined;
-        }
-        if (isSending(entry)) {
-          reason = 'being sent';
-          return undefined;
-        }
-        const note: Note = { ...entry.note, body: edit.body };
-        if (edit.type) note.type = edit.type;
-        else delete note.type;
-        // The same rules as a new note; id and created stay as they were.
-        return { ...entry, note: NoteSchema.parse(note) };
-      });
+      const [result] = await Promise.all([
+        tx.store.get(id).then(async (entry) => {
+          if (!entry) return undefined;
+          if (entry.state !== 'pending') {
+            reason = `already ${entry.state}`;
+            return undefined;
+          }
+          if (isSending(entry)) {
+            reason = 'being sent';
+            return undefined;
+          }
+          const note: Note = { ...entry.note, body: edit.body };
+          if (edit.type) note.type = edit.type;
+          else delete note.type;
+          if (!entry.attempts) {
+            // The same rules as a new note; id and created stay as they were.
+            const next: StoredEntry = { ...entry, note: NoteSchema.parse(note) };
+            await tx.store.put(next);
+            return next;
+          }
+          // A failed send may still have reached the sink (a timeout), and a
+          // resend of the same id would get that old text's receipt. Under a
+          // new id the edit is sent as a note of its own: at worst the old
+          // text is stored too, never the edit lost.
+          note.id = ulid();
+          const { lastError: _error, rejected: _rejected, ...rest } = entry;
+          const next: StoredEntry = {
+            ...rest,
+            id: note.id,
+            note: NoteSchema.parse(note),
+            attempts: 0,
+          };
+          await tx.store.add(next);
+          await tx.store.delete(id);
+          return next;
+        }),
+        tx.done,
+      ]);
       if (!result) throw new Error(`can't edit note ${id}: ${reason}`);
       return fromStored(result);
     },
@@ -276,7 +312,7 @@ export function createOutbox(
           update(id, ({ sending: _done, ...current }) => ({ ...current, ...change }));
         try {
           const receipt = await send(note, attachments);
-          await settle({ state: 'delivered', receipt });
+          await settle({ state: 'delivered', receipt, deliveredAt: Date.now() });
           delivered++;
         } catch (error) {
           const retryable = !(error instanceof TransportError) || error.retryable;
@@ -295,6 +331,23 @@ export function createOutbox(
       }
       await committed();
       return { delivered, rejected, stopped: false };
+    },
+
+    prune: async (age) => {
+      const cutoff = Date.now() - age;
+      const tx = (await db()).transaction('entries', 'readwrite');
+      const index = tx.store.index('state');
+      const sweep = async (): Promise<void> => {
+        for (
+          let cursor = await index.openCursor('delivered');
+          cursor;
+          cursor = await cursor.continue()
+        ) {
+          // Entries delivered before deliveredAt existed fall back to when they were added.
+          if ((cursor.value.deliveredAt ?? cursor.value.added) < cutoff) await cursor.delete();
+        }
+      };
+      await Promise.all([sweep(), tx.done]);
     },
 
     close,

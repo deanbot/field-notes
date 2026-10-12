@@ -5,6 +5,7 @@ import { matchesHotkey, parseHotkey } from './hotkey.ts';
 import { isEditableTarget } from './keyboard.ts';
 import type * as ConsoleModule from './console-errors.ts';
 import type * as PanelModule from './panel.ts';
+import type * as SyncModule from './sync.ts';
 import { PENDING_KEY, readPending, writePending } from './pending.ts';
 import type { Surface } from './panel.ts';
 
@@ -57,6 +58,16 @@ export interface FieldNotesOptions {
   onOpen?: (() => void) | undefined;
   /** Called once after each surface closes, whatever closed it. Unpause here. */
   onClose?: (() => void) | undefined;
+  /**
+   * The local sink's URL. Default `/__field-notes` on the page's origin; the
+   * script tag served by `field-notes serve` defaults to that server.
+   */
+  endpoint?: string | undefined;
+  /**
+   * The sink's token. Notes are sent only when there's one; until then they
+   * wait in the outbox. The script tag served by `field-notes serve` has it.
+   */
+  token?: string | undefined;
 }
 
 export interface FieldNotesHandle {
@@ -184,6 +195,38 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
     );
   }
 
+  const mirror = (pending: number): void => {
+    writePending(pending);
+    refreshBadge();
+    // An open panel shows the count too (the only badge without a button).
+    shown?.setPending(root, pending);
+  };
+  // Delivery loads only with a token and something to send, so mounting
+  // stays cheap. Its own outbox reports to the mirror only: a report from
+  // it must not start another send.
+  let sync: Promise<SyncModule.Sync | undefined> | undefined;
+  const { token } = options;
+  const send = (): void => {
+    if (!token) return;
+    sync ??= import('./sync.ts').then(
+      (mod) =>
+        signal.aborted
+          ? undefined
+          : mod.startSync({
+              endpoint: options.endpoint ?? '/__field-notes',
+              token,
+              changed: mirror,
+              signal,
+            }),
+      (error: unknown) => {
+        sync = undefined;
+        warn(`couldn't load delivery. ${String(error)}`);
+        return undefined;
+      },
+    );
+    void sync.then((started) => started?.kick());
+  };
+
   type Panel = typeof PanelModule;
   let alive = true;
   let wanted = false; // the last call was open(), not close()
@@ -223,8 +266,8 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
         selection,
         consoleErrors: () => errors?.snapshot(),
         pendingChanged: (pending: number) => {
-          writePending(pending);
-          refreshBadge();
+          mirror(pending);
+          if (pending) send();
         },
         signal,
         close: handle.close,
@@ -286,6 +329,9 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
       { signal },
     );
   }
+
+  // Notes left from an earlier visit.
+  if (readPending()) send();
 
   el[HANDLE_KEY] = handle;
   // A script tag in <head> can mount before <body> exists.

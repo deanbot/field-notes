@@ -429,6 +429,14 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   });
 }
 
+/** A pending count from elsewhere (background delivery), for the header. */
+export function setPending(root: ShadowRoot, pending: number): void {
+  const target = hosts.get(root);
+  if (!target || target.pending === pending) return;
+  target.pending = pending;
+  target.redraw?.();
+}
+
 export function hidePanel(root: ShadowRoot): void {
   const target = hosts.get(root);
   if (!target) return;
