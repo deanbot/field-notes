@@ -33,7 +33,8 @@ export type BundleErrorCode =
   | 'duplicate-entry'
   | 'too-many-entries'
   | 'too-large'
-  | 'invalid-note';
+  | 'invalid-note'
+  | 'no-notes';
 
 /** Why a bundle was rejected. Returned, never thrown, by {@link readBundle}. */
 export class BundleError extends Error {
@@ -66,13 +67,16 @@ export function writeBundle(
   const encoder = new TextEncoder();
   const files: Zippable = {};
   const rows: { dir: string; note: Note }[] = [];
+  // Case-insensitive: `abc` and `ABC` would merge when unzipped on macOS or Windows.
+  const dirs = new Set<string>();
 
   for (const { note, attachments } of items) {
     const checked = NoteSchema.safeParse(note);
     if (!checked.success) throw new TypeError(`writeBundle: invalid note ${note.id}`);
     const dir = noteDirName(note);
     const prefix = `items/${dir}/`;
-    if (`${prefix}${NOTE_FILE}` in files) throw new TypeError(`writeBundle: duplicate note ${dir}`);
+    if (dirs.has(dir.toLowerCase())) throw new TypeError(`writeBundle: duplicate note ${dir}`);
+    dirs.add(dir.toLowerCase());
     files[`${prefix}${NOTE_FILE}`] = encoder.encode(serializeNote(note));
     for (const [name, bytes] of Object.entries(attachments)) {
       if (!isAttachmentName(name) || name === NOTE_FILE) {
@@ -112,7 +116,7 @@ function renderIndex(rows: readonly { dir: string; note: Note }[], exportedAt: D
       const summary = note.body.split('\n').find((line) => line.trim()) ?? '(no text)';
       const page = note.route ?? note.url ?? '';
       lines.push(
-        `| [${cell(summary.slice(0, 80))}](items/${dir}/${NOTE_FILE}) | ${cell(note.type ?? '')} | ${note.status} | ${cell(page)} | ${note.created} |`,
+        `| [${cell(Array.from(summary).slice(0, 80).join(''))}](items/${dir}/${NOTE_FILE}) | ${cell(note.type ?? '')} | ${note.status} | ${cell(page)} | ${note.created} |`,
       );
     }
     lines.push('');
@@ -132,7 +136,6 @@ interface Entry {
 const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_SIGNATURE = 0x02014b50;
 const LOCAL_SIGNATURE = 0x04034b50;
-const UNIX = 3;
 const S_IFMT = 0o170000;
 const S_IFLNK = 0o120000;
 
@@ -176,7 +179,6 @@ function readEntries(bytes: Uint8Array, maxEntries: number): Entry[] {
     if (!inBounds(at, 46) || u32(at) !== CENTRAL_SIGNATURE) {
       throw new Reject('corrupt', 'Malformed central directory');
     }
-    const madeBy = u16(at + 4) >> 8;
     const method = u16(at + 10);
     const crc = u32(at + 16);
     const compressedSize = u32(at + 20);
@@ -194,7 +196,9 @@ function readEntries(bytes: Uint8Array, maxEntries: number): Entry[] {
     } catch {
       throw new Reject('unsafe-path', 'Entry name is not valid UTF-8');
     }
-    if (madeBy === UNIX && (mode & S_IFMT) === S_IFLNK) {
+    // Unix mode bits sit in the high 16 bits for Unix, macOS and other non-DOS
+    // creators; DOS-made zips leave them zero. Check them whatever the creator says.
+    if ((mode & S_IFMT) === S_IFLNK) {
       throw new Reject('symlink', 'Symbolic links are not allowed', name);
     }
     if (compressedSize === 0xffffffff || size === 0xffffffff || localOffset === 0xffffffff) {
@@ -303,6 +307,11 @@ export function readBundle(bytes: Uint8Array, options: ReadBundleOptions = {}): 
     for (const [dir, { note, attachments }] of items) {
       if (!note) throw new Reject('invalid-note', `Missing ${NOTE_FILE}`, `items/${dir}/`);
       result.push({ note, attachments: Object.fromEntries(attachments) });
+    }
+    // An empty export still has a root index.md. Neither usually means the zip
+    // was re-packed with everything under a top-level folder.
+    if (result.length === 0 && !seen.has('index.md')) {
+      throw new Reject('no-notes', 'No items/*/note.md or index.md at the top level of the zip');
     }
     return { ok: true, value: result };
   } catch (error) {

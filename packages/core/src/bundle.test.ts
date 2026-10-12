@@ -94,6 +94,14 @@ describe('writeBundle / readBundle', () => {
     expect(row.split(/(?<!\\)\|/)).toHaveLength(7);
   });
 
+  it('truncates long summaries by whole characters', () => {
+    const long = note('l', `${'a'.repeat(79)}🚀🚀 tail`);
+    const zip = unzipSync(writeBundle([{ note: long, attachments: {} }], { exportedAt }));
+    const index = strFromU8(zip['index.md'] ?? new Uint8Array());
+    expect(index).toContain(`[${'a'.repeat(79)}🚀](`);
+    expect(index).not.toContain('\uFFFD');
+  });
+
   it('describes a single note and an empty export', () => {
     const one = unzipSync(writeBundle(items.slice(0, 1), { exportedAt }));
     expect(strFromU8(one['index.md'] ?? new Uint8Array())).toContain('1 note, exported');
@@ -113,6 +121,13 @@ describe('writeBundle / readBundle', () => {
     [
       'a drive-relative attachment name',
       [{ note: note('a', ''), attachments: { 'C:x.png': png } }],
+    ],
+    [
+      'ids that differ only in case',
+      [
+        { note: note('abc', 'same'), attachments: {} },
+        { note: note('ABC', 'same'), attachments: {} },
+      ],
     ],
     ['an attachment named note.md', [{ note: note('a', ''), attachments: { 'note.md': png } }]],
   ])('throws on %s', (_, input) => {
@@ -144,6 +159,17 @@ describe('readBundle rejects hostile input', () => {
     const zip = zipSync({
       ...validItem(),
       'items/a-note/link.png': [strToU8('/etc/passwd'), { os: 3, attrs: (0o120777 << 16) >>> 0 }],
+    });
+    expect(error(readBundle(zip))).toEqual({ code: 'symlink', entry: 'items/a-note/link.png' });
+  });
+
+  it.each([
+    ['macOS (made-by 19)', 19],
+    ['DOS with mode bits set', 0],
+  ])('a symlink entry from %s', (_, os) => {
+    const zip = zipSync({
+      ...validItem(),
+      'items/a-note/link.png': [strToU8('/etc/passwd'), { os, attrs: (0o120777 << 16) >>> 0 }],
     });
     expect(error(readBundle(zip))).toEqual({ code: 'symlink', entry: 'items/a-note/link.png' });
   });
@@ -215,6 +241,19 @@ describe('readBundle rejects hostile input', () => {
   it('an item without note.md', () => {
     const zip = zipSync({ ...validItem(), 'items/orphan/screenshot.png': png });
     expect(error(readBundle(zip))).toEqual({ code: 'invalid-note', entry: 'items/orphan/' });
+  });
+
+  it('a zip with no notes and no index.md', () => {
+    expect(error(readBundle(zipSync({ 'README.txt': strToU8('hi') })))?.code).toBe('no-notes');
+    expect(error(readBundle(zipSync({})))?.code).toBe('no-notes');
+  });
+
+  it('an export re-zipped under a top-level folder', () => {
+    const nested: Zippable = {};
+    for (const [path, bytes] of Object.entries(unzipSync(writeBundle(items)))) {
+      nested[`field-notes-2026-10-11-1200/${path}`] = bytes;
+    }
+    expect(error(readBundle(zipSync(nested)))?.code).toBe('no-notes');
   });
 
   it.each([
