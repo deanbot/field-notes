@@ -2,7 +2,7 @@
 // chunk. State and submit logic live here; the template is a thin view of it.
 import type { Note } from '@field-notes/core/note';
 import { html, type TemplateResult } from 'lit/html.js';
-import { buildNote, resolveAuthor, resolveContext } from './capture.ts';
+import { awaitContext, buildNote, resolveAuthor, startContext } from './capture.ts';
 import { clearDraft, loadDraft, saveDraft } from './drafts.ts';
 import type { FieldNotesOptions } from './mount.ts';
 
@@ -17,6 +17,8 @@ export interface FormDeps {
   readonly deliver: (note: Note) => Promise<void>;
   /** Aborted on unmount. */
   readonly signal: AbortSignal;
+  /** True once this form's panel has closed: a later open has its own form. */
+  readonly disposed: () => boolean;
   /** Re-renders the panel after a state change. */
   readonly redraw: () => void;
   readonly focusText: () => void;
@@ -43,8 +45,13 @@ export function createForm(deps: FormDeps): Form {
   let type = draft?.type && types.includes(draft.type) ? draft.type : undefined;
   let error = '';
   let busy = false;
-  // Started now, so a slow callback has the whole time the form is open.
-  const context = resolveContext(options.context, deps.signal);
+  // Called now, so a slow callback has the whole time the form is open; the
+  // timeout only starts at submit.
+  const context = startContext(options.context);
+
+  // A function, not a property read: TypeScript would narrow the property
+  // across awaits, but unmount can happen during any of them.
+  const unmounted = (): boolean => deps.signal.aborted;
 
   const save = (): void => {
     saveDraft({ text, type });
@@ -62,6 +69,10 @@ export function createForm(deps: FormDeps): Form {
     busy = true;
     error = '';
     deps.redraw();
+    const resolved = await awaitContext(context, deps.signal);
+    // Closed while waiting: send nothing. The draft is kept, so the next
+    // panel has the text, and nothing can be added twice.
+    if (deps.disposed() || unmounted()) return;
     try {
       const note = buildNote({
         body,
@@ -69,7 +80,7 @@ export function createForm(deps: FormDeps): Form {
         author: resolveAuthor(options.author),
         environment: options.environment ?? 'local',
         selection: deps.selection,
-        context: await context,
+        context: resolved,
         consoleErrors: deps.consoleErrors(),
       });
       await deps.deliver(note);
@@ -80,7 +91,7 @@ export function createForm(deps: FormDeps): Form {
       deps.redraw();
       return;
     }
-    if (deps.signal.aborted) return;
+    if (unmounted()) return;
     clearDraft();
     deps.submitted();
   };

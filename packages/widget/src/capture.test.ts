@@ -1,6 +1,13 @@
 import { NoteSchema } from '@field-notes/core/note';
 import { type MockInstance, afterEach, describe, expect, it, vi } from 'vitest';
-import { MAX_SELECTION, buildNote, resolveAuthor, resolveContext, toContext } from './capture.ts';
+import {
+  MAX_SELECTION,
+  awaitContext,
+  buildNote,
+  resolveAuthor,
+  startContext,
+  toContext,
+} from './capture.ts';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -98,40 +105,49 @@ describe('toContext', () => {
   });
 });
 
-describe('resolveContext', () => {
+describe('startContext', () => {
+  it('resolves sync and async results', async () => {
+    await expect(startContext(() => ({ a: 1 }))).resolves.toEqual({ a: 1 });
+    await expect(startContext(() => Promise.resolve({ b: 2 }))).resolves.toEqual({ b: 2 });
+    await expect(startContext(undefined)).resolves.toBeUndefined();
+  });
+
+  it('settles without it when the callback throws, rejects or returns non-data', async () => {
+    const warn = quiet();
+    await expect(
+      startContext(() => {
+        throw new Error('boom');
+      }),
+    ).resolves.toBeUndefined();
+    await expect(startContext(() => Promise.reject(new Error('no')))).resolves.toBeUndefined();
+    await expect(startContext(() => 'text')).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(3);
+  });
+
+  it('sets no deadline of its own', () => {
+    const set = vi.spyOn(globalThis, 'setTimeout');
+    void startContext(() => new Promise(() => undefined));
+    expect(set).not.toHaveBeenCalled();
+  });
+});
+
+describe('awaitContext', () => {
   const signal = (): AbortSignal => new AbortController().signal;
 
-  it('resolves sync and async results', async () => {
-    await expect(resolveContext(() => ({ a: 1 }), signal())).resolves.toEqual({ a: 1 });
-    await expect(resolveContext(() => Promise.resolve({ b: 2 }), signal())).resolves.toEqual({
-      b: 2,
-    });
-    await expect(resolveContext(undefined, signal())).resolves.toBeUndefined();
+  it('passes a settled result straight through', async () => {
+    await expect(awaitContext(Promise.resolve({ a: 1 }), signal())).resolves.toEqual({ a: 1 });
   });
 
-  it('settles without it when the callback throws or rejects', async () => {
+  it('goes without a result that is still pending after the timeout', async () => {
     const warn = quiet();
-    const thrown = resolveContext(() => {
-      throw new Error('boom');
-    }, signal());
-    await expect(thrown).resolves.toBeUndefined();
-    await expect(resolveContext(() => Promise.reject(new Error('no')), signal())).resolves.toBe(
-      undefined,
-    );
-    expect(warn).toHaveBeenCalledTimes(2);
-  });
-
-  it('settles without it when the callback is too slow', async () => {
-    const warn = quiet();
-    const never = new Promise(() => undefined);
-    await expect(resolveContext(() => never, signal(), 20)).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('took over 20 ms'));
+    await expect(awaitContext(new Promise(() => undefined), signal(), 20)).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("hadn't settled 20 ms after submit"));
   });
 
   it('settles at once and clears its timer when aborted', async () => {
     const controller = new AbortController();
     const clear = vi.spyOn(globalThis, 'clearTimeout');
-    const pending = resolveContext(() => new Promise(() => undefined), controller.signal, 60_000);
+    const pending = awaitContext(new Promise(() => undefined), controller.signal, 60_000);
     controller.abort();
     await expect(pending).resolves.toBeUndefined();
     expect(clear).toHaveBeenCalled();
@@ -141,7 +157,7 @@ describe('resolveContext', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(
-      resolveContext(() => new Promise(() => undefined), controller.signal, 60_000),
+      awaitContext(new Promise(() => undefined), controller.signal, 60_000),
     ).resolves.toBeUndefined();
   });
 });

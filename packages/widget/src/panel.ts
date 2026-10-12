@@ -157,6 +157,8 @@ interface Hosts {
   readonly surface: HTMLElement;
   readonly toast: HTMLElement;
   timer?: ReturnType<typeof setTimeout>;
+  /** Detaches the open form, so a submit still in flight can't touch the next one. */
+  dispose?: (() => void) | undefined;
 }
 const hosts = new WeakMap<ShadowRoot, Hosts>();
 
@@ -245,16 +247,24 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
     if ((event.currentTarget as Element).isConnected) view.close();
   };
 
+  let disposed = false;
+  target.dispose?.();
+  target.dispose = () => {
+    disposed = true;
+  };
   const form = createForm({
     ...view,
+    disposed: () => disposed,
     redraw: () => {
-      draw();
+      if (!disposed) draw();
     },
     focusText: () => {
       root.getElementById('field-notes-text')?.focus();
     },
     submitted: () => {
-      view.close();
+      // A delivery that finished after its panel closed still confirms, but
+      // leaves the current panel open.
+      if (!disposed) view.close();
       showToast(target, 'Note added');
     },
   });
@@ -284,11 +294,17 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   // button, which was shown earlier), the page inert, Esc to close, and
   // focus handed back to whatever had it when the dialog closes.
   dialog.showModal();
+  // A restored draft continues where it left off; WebKit would put the caret first.
+  const text = root.getElementById('field-notes-text');
+  if (text instanceof HTMLTextAreaElement)
+    text.setSelectionRange(text.value.length, text.value.length);
 }
 
 export function hidePanel(root: ShadowRoot): void {
   const target = hosts.get(root);
   if (!target) return;
+  target.dispose?.();
+  target.dispose = undefined;
   const dialog = target.surface.querySelector('dialog');
   if (dialog?.open) dialog.close();
   render(nothing, target.surface);

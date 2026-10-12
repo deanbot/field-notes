@@ -264,6 +264,24 @@ describe('metadata', () => {
     expect(lastNote()).not.toHaveProperty('context');
   });
 
+  it('keeps a slow context() that settles before submit', async () => {
+    await mount({
+      context: () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({ slow: true });
+          }, 1500);
+        }),
+    }).open();
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await userEvent.type(textarea(), 'x');
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    await vi.waitFor(() => {
+      expect(delivered).toHaveBeenCalledOnce();
+    });
+    expect(lastNote().context).toEqual({ slow: true });
+  });
+
   it('attaches console errors when opted in', async () => {
     const host = vi.fn();
     console.error = host;
@@ -292,6 +310,83 @@ describe('metadata', () => {
   });
 });
 
+describe('a submit still in flight', () => {
+  it('sends nothing and leaves the reopened panel alone when closed before delivery', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const h = mount({ context: () => new Promise(() => undefined) });
+    await h.open();
+    await userEvent.type(textarea(), 'first');
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    await userEvent.keyboard('{Escape}');
+    await vi.waitFor(() => {
+      expect(dialog()).toBeNull();
+    });
+    await h.open();
+    // Past the old submit's context() timeout.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(delivered).not.toHaveBeenCalled();
+    expect(dialog()?.open).toBe(true);
+    expect(textarea().value).toBe('first');
+    expect(shadow().querySelector('button.primary')?.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('finishes a delivery already under way without touching the reopened panel', async () => {
+    let finish: () => void = () => undefined;
+    delivered.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const h = mount();
+    await h.open();
+    await userEvent.type(textarea(), 'first');
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    await vi.waitFor(() => {
+      expect(delivered).toHaveBeenCalledOnce();
+    });
+    h.close();
+    await h.open();
+    await userEvent.type(textarea(), ' and more');
+    finish();
+    await vi.waitFor(() => {
+      expect(toast()?.matches(':popover-open')).toBe(true);
+    });
+    expect(dialog()?.open).toBe(true);
+    expect(textarea().value).toBe('first and more');
+  });
+});
+
+describe('a failed delivery from a closed panel', () => {
+  it('leaves the reopened panel as it is', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let fail: (error: Error) => void = () => undefined;
+    delivered.mockImplementation(
+      () =>
+        new Promise<void>((_, reject) => {
+          fail = reject;
+        }),
+    );
+    const h = mount();
+    await h.open();
+    await userEvent.type(textarea(), 'first');
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    await vi.waitFor(() => {
+      expect(delivered).toHaveBeenCalledOnce();
+    });
+    h.close();
+    await h.open();
+    await userEvent.type(textarea(), ' and more');
+    const before = textarea();
+    fail(new Error('disk full'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(textarea()).toBe(before);
+    expect(textarea().value).toBe('first and more');
+    expect(errorText()).toBe('');
+    expect(shadow().querySelector('button.primary')?.hasAttribute('disabled')).toBe(false);
+  });
+});
+
 describe('drafts', () => {
   it('survive unmount and remount, and clear on submit', async () => {
     await mount().open();
@@ -304,6 +399,7 @@ describe('drafts', () => {
     await mount().open();
     expect(textarea().value).toBe('half a thought');
     expect(chip('idea')?.checked).toBe(true);
+    expect(textarea().selectionStart).toBe('half a thought'.length);
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
     await vi.waitFor(() => {
       expect(delivered).toHaveBeenCalledOnce();
@@ -338,11 +434,19 @@ describe('teardown', () => {
     expect(clear).toHaveBeenCalledWith(toastTimer);
   });
 
-  it('clears the context() timer on unmount', async () => {
-    const clear = vi.spyOn(globalThis, 'clearTimeout');
+  it('clears the context() timer on unmount, and sends nothing', async () => {
     await mount({ context: () => new Promise(() => undefined) }).open();
-    clear.mockClear();
+    await userEvent.type(textarea(), 'x');
+    const set = vi.spyOn(globalThis, 'setTimeout');
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    // The submit-time deadline for context(): 1000 ms.
+    const index = set.mock.calls.findIndex(([, ms]) => ms === 1000);
+    const timer = set.mock.results[index]?.value as unknown;
+    expect(timer).toBeDefined();
+    const clear = vi.spyOn(globalThis, 'clearTimeout');
     handle?.unmount();
-    expect(clear).toHaveBeenCalled();
+    expect(clear).toHaveBeenCalledWith(timer);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(delivered).not.toHaveBeenCalled();
   });
 });
