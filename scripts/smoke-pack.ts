@@ -109,22 +109,12 @@ try {
     assert(version === pkg.version, `expected ${pkg.version}, got ${version}`);
   });
 
-  check('types resolve for a TypeScript consumer (nodenext)', () => {
+  // Two compiles: the widget's types must not need Node's; the sink is a
+  // Node API, so its consumers have them.
+  const compile = (name: string, lines: string[], types: string[]): void => {
+    writeFileSync(join(consumer, `${name}.ts`), lines.join('\n'));
     writeFileSync(
-      join(consumer, 'consumer.ts'),
-      [
-        `import { TAG_NAME, isEditableTarget, mountFieldNotes, type FieldNotesHandle } from '${pkg.name}';`,
-        `import { isAllowedOrigin } from '${pkg.name}/sink';`,
-        `const tag: string = TAG_NAME;`,
-        `const editable: boolean = isEditableTarget(null);`,
-        `const handle: FieldNotesHandle = mountFieldNotes({ enabled: () => false });`,
-        `const opened: Promise<void> = handle.open();`,
-        `const allowed: boolean = isAllowedOrigin('http://localhost:1', []);`,
-        `export { tag, editable, allowed, opened };`,
-      ].join('\n'),
-    );
-    writeFileSync(
-      join(consumer, 'tsconfig.json'),
+      join(consumer, `tsconfig.${name}.json`),
       JSON.stringify({
         compilerOptions: {
           strict: true,
@@ -133,12 +123,41 @@ try {
           moduleResolution: 'nodenext',
           target: 'es2022',
           lib: ['es2023', 'dom'],
-          types: [],
+          typeRoots: [join(root, 'node_modules/@types')],
+          types,
         },
-        files: ['consumer.ts'],
+        files: [`${name}.ts`],
       }),
     );
-    run('node', [tsc, '-p', 'tsconfig.json'], consumer);
+    run('node', [tsc, '-p', `tsconfig.${name}.json`], consumer);
+  };
+
+  check('types resolve for a TypeScript consumer (nodenext), without Node types', () => {
+    compile(
+      'consumer',
+      [
+        `import { TAG_NAME, isEditableTarget, mountFieldNotes, type FieldNotesHandle } from '${pkg.name}';`,
+        `const tag: string = TAG_NAME;`,
+        `const editable: boolean = isEditableTarget(null);`,
+        `const handle: FieldNotesHandle = mountFieldNotes({ enabled: () => false });`,
+        `const opened: Promise<void> = handle.open();`,
+        `export { tag, editable, opened };`,
+      ],
+      [],
+    );
+  });
+
+  check('sink types resolve for a Node consumer (nodenext)', () => {
+    compile(
+      'sink-consumer',
+      [
+        `import { createSinkHandler, isAllowedOrigin, type SinkHandler } from '${pkg.name}/sink';`,
+        `const allowed: boolean = isAllowedOrigin('http://localhost:1', []);`,
+        `const handler: SinkHandler = createSinkHandler({ dir: '.field-notes', token: 't' });`,
+        `export { allowed, handler };`,
+      ],
+      ['node'],
+    );
   });
 } finally {
   rmSync(work, { recursive: true, force: true });

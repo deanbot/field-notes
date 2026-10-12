@@ -15,6 +15,8 @@
 - Every note has its own directory, and there is no shared index file. Writers never touch another note's directory.
 - `<id>` is the note's `id` with any character outside `A-Z a-z 0-9 _ -` replaced by `_`, and `<slug>` is a short, filesystem-safe summary of the body. Readers must not parse meaning out of the directory name. Read `note.md` instead.
 - Different notes can map to the same directory name: ids that differ only in replaced characters, or only in case on a case-insensitive filesystem. So writers **create a note's directory exclusively and never write into one that already exists**. On a clash, a writer that assigns ids picks a new one; an importer reports the note as a conflict and skips it.
+- A writer adds `note.md` last, after the note's other files. A directory without `note.md` is still being written: readers skip it.
+- Other entries in `.field-notes/` (such as `.gitignore`, or the sink's own `.sink/` state) aren't notes. Readers only look in `items/`.
 - An export zip uses the same layout (`items/…`) plus a top-level `index.md` digest. Unzipping it into `.field-notes/` gives the same result as notes written by the sink.
 
 ## `note.md`
@@ -39,7 +41,9 @@ The frontmatter holds the fields below. Everything after the closing `---` is th
 
 ## JSON shape
 
-The same note as JSON is the frontmatter fields plus `body` (a string). This is the payload the sink accepts and the shape `note.schema.json` describes. It doesn't depend on any particular transport.
+The same note as JSON is the frontmatter fields plus `body` (a string). This is the shape `note.schema.json` describes. It doesn't depend on any particular transport.
+
+A client sending a note to the local sink sends this shape **without `id`**: the sink assigns the id. It may add `clientId`, its own id for the note, which the sink uses only to recognize a resend and answer it with the first receipt instead of storing the note twice. `clientId` isn't written to `note.md`. If `author` is missing, the sink may fill it in (by default from `git config user.name`).
 
 ## Fields
 

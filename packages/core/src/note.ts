@@ -144,8 +144,8 @@ const _same: _Same = true;
 export const NoteFrontmatterSchema: z.ZodMiniType<NoteFrontmatter> = frontmatter;
 
 /**
- * Validates a complete note: frontmatter fields plus `body`. This is also the
- * JSON payload the sink accepts.
+ * Validates a complete note: frontmatter fields plus `body`. The sink's request
+ * payload is this without `id`, which the sink assigns (see spec/SPEC.md).
  */
 export const NoteSchema: z.ZodMiniType<Note> = note;
 
