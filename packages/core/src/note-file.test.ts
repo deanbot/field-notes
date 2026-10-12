@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import {
   appendToNotes,
   noteDirName,
@@ -76,7 +77,7 @@ describe('serializeNote / parseNote', () => {
         'id: 01JA8X3Q7K2M9V5T0N4R6P8W1Y',
         'schema: 1',
         'status: open',
-        'created: 2026-10-09T18:42:11.204Z',
+        'created: "2026-10-09T18:42:11.204Z"',
         'tags: []',
         '---',
         '',
@@ -95,6 +96,47 @@ describe('serializeNote / parseNote', () => {
   it('reads an empty body at end of file', () => {
     const text = '---\nid: x\nschema: 1\nstatus: open\ncreated: 2026-10-09T18:42:11Z\n---';
     expect(value(parseNote(text)).body).toBe('');
+  });
+});
+
+/** Frontmatter as a YAML 1.1 parser (PyYAML and others) would read it. */
+function readAsYaml11(text: string): unknown {
+  return parse(text.slice(4, text.indexOf('\n---\n')), { schema: 'yaml-1.1' });
+}
+
+const ambiguous = {
+  created: '2026-10-09T18:42:11.204Z',
+  date: '2026-10-09',
+  yes: 'yes',
+  off: 'off',
+  octal: '0777',
+  sexagesimal: '1:20',
+  float: '1_000.5',
+  tilde: '~',
+};
+
+describe('YAML 1.1 compatibility', () => {
+  it.each(validNotes)('%s reads the same in a YAML 1.1 parser', (_, note) => {
+    const { body: _body, ...fields } = note;
+    expect(readAsYaml11(serializeNote(note))).toEqual(fields);
+  });
+
+  it('quotes strings a YAML 1.1 parser would read as another type', () => {
+    const note = { ...minimal, ...ambiguous };
+    const { body: _body, ...fields } = note;
+    expect(readAsYaml11(serializeNote(note))).toEqual(fields);
+    expect(value(parseNote(serializeNote(note)))).toEqual(note);
+  });
+
+  it('updateNote quotes ambiguous patch values', () => {
+    const text = value(
+      updateNote(serializeNote(minimal), { resolution: 'yes', tags: ['on', '2026-10-09', 'ui'] }),
+    );
+    expect(readAsYaml11(text)).toMatchObject({
+      resolution: 'yes',
+      tags: ['on', '2026-10-09', 'ui'],
+    });
+    expect(text).toContain('tags:\n  - "on"\n  - "2026-10-09"\n  - ui\n');
   });
 });
 

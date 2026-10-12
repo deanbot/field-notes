@@ -1,4 +1,4 @@
-import { parse, parseDocument, stringify } from 'yaml';
+import { Scalar, parse, parseDocument, stringify, visit } from 'yaml';
 import { NoteSchema } from './note.ts';
 import type { Note, NoteFrontmatter } from './note.ts';
 import { slugify } from './slug.ts';
@@ -54,7 +54,9 @@ const FIELD_ORDER = [
   'resolution',
 ] as const;
 
-const YAML_OPTIONS = { lineWidth: 0 } as const;
+// Written with YAML 1.1 rules so strings that 1.1 parsers (PyYAML and others)
+// would read as dates, booleans or numbers get quoted. The output is still YAML 1.2.
+const YAML_OPTIONS = { lineWidth: 0, schema: 'yaml-1.1' } as const;
 // Warnings (unknown tags and the like) aren't errors; don't print them in someone's console.
 const PARSE_OPTIONS = { uniqueKeys: true, logLevel: 'error' } as const;
 
@@ -143,11 +145,30 @@ export function updateNote(text: string, patch: NotePatch): NoteResult<string> {
     };
   }
   for (const key of ['status', 'resolution', 'tags'] as const) {
-    if (key in patch) doc.set(key, patch[key]);
+    if (!(key in patch)) continue;
+    // The document keeps its own (1.2) schema, so quote ambiguous strings explicitly.
+    const node = doc.createNode(patch[key]);
+    visit(node, {
+      Scalar(_, scalar) {
+        if (typeof scalar.value === 'string' && readsAsOtherType(scalar.value)) {
+          scalar.type = Scalar.QUOTE_DOUBLE;
+        }
+      },
+    });
+    doc.set(key, node);
   }
   const checked = validate(doc.toJS(), parts.rest.replace(/^\r?\n/, ''));
   if (!checked.ok) return checked;
-  return { ok: true, value: `---\n${doc.toString(YAML_OPTIONS)}---\n${parts.rest}` };
+  return { ok: true, value: `---\n${doc.toString({ lineWidth: 0 })}---\n${parts.rest}` };
+}
+
+/** Whether a YAML 1.1 parser would read `text`, unquoted, as something other than this string. */
+function readsAsOtherType(text: string): boolean {
+  try {
+    return parse(text, { schema: 'yaml-1.1', logLevel: 'error' }) !== text;
+  } catch {
+    return true;
+  }
 }
 
 const HEADING = /^## .*$/gm;
