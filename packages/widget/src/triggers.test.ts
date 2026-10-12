@@ -23,7 +23,7 @@ function shadow(): ShadowRoot {
 }
 
 const button = (): HTMLButtonElement | null => shadow().querySelector('button.trigger');
-const isOpen = (): boolean => shadow().querySelector('[role="dialog"]') !== null;
+const isOpen = (): boolean => shadow().querySelector('dialog') !== null;
 
 /** Presses Alt+Shift+F on `target` the way macOS reports it, and returns the event. */
 function pressHotkey(target: EventTarget = document.body, init: KeyboardEventInit = {}): Event {

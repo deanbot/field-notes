@@ -1,4 +1,5 @@
 import type { Corner, Offset } from './button.ts';
+import type { Surface } from './panel.ts';
 import {
   type FieldNotesHandle,
   type FieldNotesOptions,
@@ -23,6 +24,7 @@ export interface ScriptApi {
 
 const CORNERS: readonly string[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const TRIGGERS: readonly string[] = ['button', 'hotkey'];
+const SURFACES: readonly string[] = ['popover', 'sheet', 'side'];
 
 /** `16` → 16; `8,24` → x 8, y 24. Anything else is ignored. */
 function parseOffset(text: string): Offset | undefined {
@@ -35,7 +37,8 @@ function parseOffset(text: string): Offset | undefined {
 /**
  * Options from the script tag's `data-*` attributes: `data-enabled`
  * (`true`/`false`), `data-trigger` (`"button hotkey"`, or empty for API only),
- * `data-position` (a corner), `data-offset` (`16` or `8,24`) and `data-hotkey`.
+ * `data-position` (a corner), `data-offset` (`16` or `8,24`), `data-surface`
+ * (`popover`, `sheet` or `side`) and `data-hotkey`.
  * Values it doesn't recognise are ignored.
  */
 export function scriptOptions(script: HTMLOrSVGScriptElement | null): FieldNotesOptions {
@@ -52,6 +55,7 @@ export function scriptOptions(script: HTMLOrSVGScriptElement | null): FieldNotes
   }
   const offset = data.offset ? parseOffset(data.offset) : undefined;
   if (offset !== undefined) options.buttonOffset = offset;
+  if (data.surface && SURFACES.includes(data.surface)) options.surface = data.surface as Surface;
   if (data.hotkey) options.hotkey = data.hotkey;
   return options;
 }

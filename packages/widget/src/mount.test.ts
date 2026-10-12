@@ -19,7 +19,7 @@ function shadow(): ShadowRoot {
   return root;
 }
 
-const panel = (): Element | null => shadow().querySelector('[role="dialog"]');
+const panel = (): Element | null => shadow().querySelector('dialog');
 
 afterEach(() => {
   for (const handle of mounts.splice(0)) handle.unmount();
@@ -68,7 +68,7 @@ describe('mountFieldNotes', () => {
     const handle = mount({ enabled: true });
     await handle.open();
     await handle.open();
-    expect(shadow().querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(shadow().querySelectorAll('dialog')).toHaveLength(1);
     handle.close();
     expect(panel()).toBeNull();
     await handle.open();
@@ -96,7 +96,7 @@ describe('mountFieldNotes', () => {
     const opening = handle.open();
     handle.unmount();
     await opening;
-    expect(root.querySelector('[role="dialog"]')).toBeNull();
+    expect(root.querySelector('dialog')).toBeNull();
     expect(handle.active).toBe(false);
   });
 

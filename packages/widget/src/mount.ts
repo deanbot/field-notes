@@ -4,6 +4,7 @@ import { HANDLE_KEY, TAG_NAME, defineShell } from './element.ts';
 import { matchesHotkey, parseHotkey } from './hotkey.ts';
 import { isEditableTarget } from './keyboard.ts';
 import type * as PanelModule from './panel.ts';
+import type { Surface } from './panel.ts';
 
 /** What opens the widget. The API (`open()`, `close()`, `toggle()`) always works. */
 export type Trigger = 'button' | 'hotkey';
@@ -17,6 +18,12 @@ export interface FieldNotesOptions {
   buttonPosition?: Corner | undefined;
   /** The button's distance from its corner, in px. Default `16`. */
   buttonOffset?: Offset | undefined;
+  /**
+   * Layout: `'popover'` (anchored to the button), `'sheet'` (bottom, up to 40%
+   * of the viewport) or `'side'`. Default `'popover'`, or `'sheet'` with no
+   * button.
+   */
+  surface?: Surface | undefined;
   /**
    * Default `'Alt+Shift+F'`. Modifiers (`Alt`, `Ctrl`, `Meta`, `Shift`) plus one
    * key: a letter, digit, punctuation, `Space`, a `KeyboardEvent.code` name or
@@ -108,9 +115,11 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
   const teardown = new AbortController();
   const { signal } = teardown;
 
+  const corner = options.buttonPosition ?? 'bottom-right';
   const button = triggers.has('button')
-    ? createButton(options.buttonPosition ?? 'bottom-right', options.buttonOffset ?? 16)
+    ? createButton(corner, options.buttonOffset ?? 16)
     : undefined;
+  const surface = options.surface ?? (button ? 'popover' : 'sheet');
   const expanded = (open: boolean): void => {
     button?.setAttribute('aria-expanded', String(open));
   };
@@ -144,7 +153,11 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
       }
       if (!stillWanted()) return;
       shown = panel;
-      panel.showPanel(root, { close: handle.close });
+      panel.showPanel(root, {
+        surface,
+        anchor: button && { rect: button.getBoundingClientRect(), corner },
+        close: handle.close,
+      });
       expanded(true);
     },
     close: () => {
