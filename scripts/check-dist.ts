@@ -428,6 +428,113 @@ await check(
   },
 );
 
+// A real share of the tab. CI only: elsewhere the browser may ask the OS for
+// screen recording, and the share must never reach for a real screen.
+const DISPLAY_E2E =
+  "a consumer's production build in display mode shares this tab: masked, without the widget, at the DOM screenshot's scale";
+if (process.env.CI) {
+  await check(DISPLAY_E2E, async () => {
+    const chunks = await consumerBuild(
+      `import { mountFieldNotes } from 'field-notes';\nwindow.fieldNotes = mountFieldNotes({ enabled: true, mode: 'export', screenshot: 'display' });`,
+    );
+    const entry = chunks.find((chunk) => chunk.isEntry);
+    assert(entry, 'no entry chunk');
+    // Full Chromium: the headless shell can't share a tab. The flag accepts
+    // the browser's "share this tab" prompt, and nothing else.
+    const browser = await chromium.launch({
+      channel: 'chromium',
+      args: ['--auto-accept-this-tab-capture'],
+    });
+    try {
+      const page = await browser.newPage({ viewport: { width: 400, height: 300 } });
+      // A secure origin: there's no screen sharing without one.
+      const origin = 'https://field-notes.test';
+      const requested: string[] = [];
+      await page.route(`${origin}/**`, async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === '/') {
+          await route.fulfill({
+            contentType: 'text/html',
+            body: `<!doctype html><body style="margin:0;height:3000px;background:rgb(0,0,255)"><form><input type="password" value="secret" style="position:fixed;top:40px;left:40px;width:120px;height:30px;border:0;background:rgb(255,0,0);color:rgb(255,0,0)"></form><script type="module" src="/${entry.fileName}"></script></body>`,
+          });
+          return;
+        }
+        requested.push(path);
+        const chunk = chunks.find((c) => `/${c.fileName}` === path);
+        await route.fulfill(
+          chunk ? { contentType: 'text/javascript', body: chunk.code } : { status: 404 },
+        );
+      });
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      await page.goto(`${origin}/`);
+      await page.waitForFunction(() => 'fieldNotes' in window);
+      await page.evaluate(() => {
+        scrollTo(0, 500);
+      });
+      // A click: sharing needs a user gesture.
+      await page.locator('field-notes .trigger').click();
+      await page.locator('.shot img[src^="blob:"]').waitFor();
+      assert(
+        requested.some((path) => /\/display-[^/]*\.js$/.test(path)),
+        'the display chunk did not load',
+      );
+      assert(
+        !requested.some((path) => /\/screenshot-[^/]*\.js$/.test(path)),
+        'the DOM screenshot was taken instead of the share',
+      );
+      const shot = await page.evaluate(async () => {
+        const img = document.querySelector('field-notes')?.shadowRoot?.querySelector('.shot img');
+        if (!(img instanceof HTMLImageElement)) throw new Error('no thumbnail');
+        const bitmap = await createImageBitmap(await (await fetch(img.src)).blob());
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const paint = canvas.getContext('2d');
+        if (!paint) throw new Error('no 2d context');
+        paint.drawImage(bitmap, 0, 0);
+        const { data } = paint.getImageData(0, 0, canvas.width, canvas.height);
+        const scale = Math.min(devicePixelRatio, 2);
+        const at = (x: number, y: number): number[] => {
+          const i = (Math.floor(y * scale) * canvas.width + Math.floor(x * scale)) * 4;
+          return [data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0];
+        };
+        let red = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if ((data[i] ?? 0) > 150 && (data[i + 1] ?? 0) < 100 && (data[i + 2] ?? 0) < 100) red++;
+        }
+        const { clientWidth, clientHeight } = document.documentElement;
+        return {
+          size: [bitmap.width, bitmap.height],
+          expected: [clientWidth * scale, clientHeight * scale],
+          red,
+          page: at(10, 10),
+          field: at(100, 55),
+          // Where the widget's button is, bottom right.
+          corner: at(clientWidth - 30, clientHeight - 30),
+        };
+      });
+      assert(
+        JSON.stringify(shot.size) === JSON.stringify(shot.expected),
+        `the shot is ${shot.size.join('×')}, not ${shot.expected.join('×')}`,
+      );
+      const blue = ([r = 0, g = 0, b = 0]: number[]): boolean => r < 60 && g < 60 && b > 200;
+      assert(blue(shot.page), `the page isn't in the shot: ${shot.page.join(',')}`);
+      assert(shot.red === 0, `${String(shot.red)} pixels of the masked field show`);
+      assert(
+        shot.field.every((value) => Math.abs(value - 136) < 10),
+        `the masked field isn't painted over: ${shot.field.join(',')}`,
+      );
+      assert(blue(shot.corner), `the widget is in the shot: ${shot.corner.join(',')}`);
+      assert(errors.length === 0, `page errors: ${errors.join('; ')}`);
+    } finally {
+      await browser.close();
+    }
+  });
+} else {
+  console.log(`  - ${DISPLAY_E2E} (CI only)`);
+}
+
 await check('script tag and npm import on one page share a single widget', async () => {
   const browser = await chromium.launch();
   try {
