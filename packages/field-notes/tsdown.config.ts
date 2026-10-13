@@ -28,8 +28,20 @@ export default defineConfig([
     // Rolldown's browser platform would fill this in now; leave it for the
     // consumer's bundler, which knows whether it's making a production build.
     define: { 'process.env.NODE_ENV': 'process.env.NODE_ENV' },
-    // The panel is a lazy chunk: the entry stays an activation stub.
-    outputOptions: { chunkFileNames: '[name]-[hash].js' },
+    // The panel is a lazy chunk: the entry stays an activation stub. What the
+    // panel, delivery and export chunks share (the note schema with Zod, and
+    // the transport error) gets a fixed name, so size budgets can find it.
+    outputOptions: {
+      chunkFileNames: '[name]-[hash].js',
+      codeSplitting: {
+        groups: [
+          {
+            name: 'schema',
+            test: /node_modules[\\/]zod[\\/]|core[\\/]src[\\/]note\.ts|widget[\\/]src[\\/]transport\.ts/,
+          },
+        ],
+      },
+    },
     // Minified so the size budgets measure what a page actually loads;
     // sourcemaps keep it debuggable.
     minify: true,

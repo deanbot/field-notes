@@ -39,6 +39,7 @@ async function check(name: string, fn: () => void | Promise<void>): Promise<void
 const stub = read('index.js');
 const panelFile = files.find((file) => /^panel-.*\.js$/.test(file));
 const syncFile = files.find((file) => /^sync-.*\.js$/.test(file));
+const exportFile = files.find((file) => /^export-.*\.js$/.test(file));
 
 /** A chunk and every chunk it imports statically, as one text. */
 function withImports(file: string, seen = new Set<string>()): string {
@@ -93,6 +94,21 @@ await check('delivery is a lazy chunk without Lit, yaml or fflate', () => {
   assert(!sync.includes(LIT), 'Lit is in the delivery chunks');
   assert(!YAML.test(sync) && !sync.includes(FFLATE), 'yaml or fflate is in the delivery chunks');
 });
+
+await check('export is a lazy chunk with fflate and yaml, without Lit', () => {
+  assert(exportFile, 'no export chunk');
+  assert(lazyFromStub(exportFile), 'the stub does not lazy-load export');
+  const chunk = withImports(exportFile);
+  assert(chunk.includes(FFLATE) && YAML.test(chunk), 'fflate or yaml is not in the export chunks');
+  assert(!chunk.includes(LIT), 'Lit is in the export chunks');
+});
+
+await check(
+  'the script-tag build has no export chunk inlined (only `serve`, local mode, serves it)',
+  () => {
+    assert(!YAML.test(iife) && !iife.includes(FFLATE), 'yaml or fflate is in the script-tag build');
+  },
+);
 
 await check('the script-tag build has one token placeholder for `serve` to fill', () => {
   const found = iife.split('{{field-notes-token}}').length - 1;

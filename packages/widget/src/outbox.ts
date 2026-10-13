@@ -23,6 +23,8 @@ export interface OutboxEntry {
   readonly receipt?: Receipt | undefined;
   /** When a transport took it (ms). */
   readonly deliveredAt?: number | undefined;
+  /** When it went into the last export's zip (ms); the zip's own date. */
+  readonly exportedAt?: number | undefined;
   /** Failed sends so far. */
   readonly attempts: number;
   readonly lastError?: string | undefined;
@@ -74,8 +76,13 @@ export interface Outbox {
   readonly remove: (id: string) => Promise<void>;
   /** Sends pending notes, oldest first (see FlushResult). */
   readonly flush: (transport: Transport) => Promise<FlushResult>;
-  /** Forgets delivered notes delivered more than `age` ms ago. */
-  readonly prune: (age: number) => Promise<void>;
+  /**
+   * Marks these pending notes as the last export, at `at` (ms), and forgets
+   * the export before. A note no longer pending is left as it is.
+   */
+  readonly markExported: (ids: readonly string[], at: number) => Promise<void>;
+  /** Forgets delivered or exported notes that reached that state more than `age` ms ago. */
+  readonly prune: (state: 'delivered' | 'exported', age: number) => Promise<void>;
   readonly close: () => void;
 }
 
@@ -333,18 +340,37 @@ export function createOutbox(
       return { delivered, rejected, stopped: false };
     },
 
-    prune: async (age) => {
+    markExported: async (ids, at) => {
+      const tx = (await db()).transaction('entries', 'readwrite');
+      const mark = async (): Promise<void> => {
+        const index = tx.store.index('state');
+        for (
+          let cursor = await index.openCursor('exported');
+          cursor;
+          cursor = await cursor.continue()
+        ) {
+          await cursor.delete();
+        }
+        for (const id of ids) {
+          const entry = await tx.store.get(id);
+          if (entry?.state === 'pending')
+            await tx.store.put({ ...entry, state: 'exported', exportedAt: at });
+        }
+      };
+      await Promise.all([mark(), tx.done]);
+      await committed();
+    },
+
+    prune: async (state, age) => {
       const cutoff = Date.now() - age;
       const tx = (await db()).transaction('entries', 'readwrite');
       const index = tx.store.index('state');
       const sweep = async (): Promise<void> => {
-        for (
-          let cursor = await index.openCursor('delivered');
-          cursor;
-          cursor = await cursor.continue()
-        ) {
+        for (let cursor = await index.openCursor(state); cursor; cursor = await cursor.continue()) {
+          const { deliveredAt, exportedAt, added } = cursor.value;
           // Entries delivered before deliveredAt existed fall back to when they were added.
-          if ((cursor.value.deliveredAt ?? cursor.value.added) < cutoff) await cursor.delete();
+          const since = (state === 'delivered' ? deliveredAt : exportedAt) ?? added;
+          if (since < cutoff) await cursor.delete();
         }
       };
       await Promise.all([sweep(), tx.done]);

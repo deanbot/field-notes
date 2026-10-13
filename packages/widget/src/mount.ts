@@ -4,6 +4,7 @@ import { HANDLE_KEY, TAG_NAME, defineShell } from './element.ts';
 import { matchesHotkey, parseHotkey } from './hotkey.ts';
 import { isEditableTarget } from './keyboard.ts';
 import type * as ConsoleModule from './console-errors.ts';
+import type * as ExportModule from './export.ts';
 import type * as PanelModule from './panel.ts';
 import type * as SyncModule from './sync.ts';
 import { PENDING_KEY, readPending, writePending } from './pending.ts';
@@ -73,7 +74,23 @@ export interface FieldNotesOptions {
    * served by `field-notes serve` has it.
    */
   token?: string | undefined;
+  /**
+   * `'local'` (default) sends notes to the local sink. `'export'` sends
+   * nothing anywhere: notes stay in this browser until "My notes" exports
+   * them as a zip.
+   */
+  mode?: 'local' | 'export' | undefined;
+  /** Export mode: how long "Download last export again" stays available. Default 7. */
+  exportRetentionDays?: number | undefined;
+  /**
+   * Export mode: suggest an export once the unexported notes reach this many,
+   * or this size. Default `{ notes: 50, megabytes: 100 }`.
+   */
+  storageWarning?: { notes?: number | undefined; megabytes?: number | undefined } | undefined;
 }
+
+/** Loads the export chunk; only the npm build has one. */
+export type LoadExport = () => Promise<typeof ExportModule>;
 
 export interface FieldNotesHandle {
   /** False when activation left the widget off; every method is then a no-op. */
@@ -133,7 +150,10 @@ const hook = (fn: (() => void) | undefined): void => {
  * npm import), warns and returns the existing mount instead of throwing.
  * Where there's no DOM, or activation says no, it returns an inactive handle.
  */
-export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHandle {
+export function mountFieldNotes(
+  options: FieldNotesOptions = {},
+  loadExport?: LoadExport,
+): FieldNotesHandle {
   if (typeof document === 'undefined' || typeof customElements === 'undefined') return inactive;
   if (!isEnabled(options.enabled ?? 'auto')) return inactive;
 
@@ -175,6 +195,8 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
     ? createButton(corner, options.buttonOffset ?? 16)
     : undefined;
   const surface = options.surface ?? (button ? 'popover' : 'sheet');
+  // Export mode sends nothing anywhere, not even a request for the token.
+  const exporting = options.mode === 'export';
   // A sync storage read, not IndexedDB: mounting stays cheap.
   const refreshBadge = (): void => {
     if (button) setBadge(button, readPending());
@@ -270,8 +292,9 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
         consoleErrors: () => errors?.snapshot(),
         pendingChanged: (pending: number) => {
           mirror(pending);
-          if (pending) send();
+          if (pending && !exporting) send();
         },
+        loadExport,
         signal,
         close: handle.close,
       });
@@ -334,7 +357,7 @@ export function mountFieldNotes(options: FieldNotesOptions = {}): FieldNotesHand
   }
 
   // Notes left from an earlier visit.
-  if (readPending()) send();
+  if (readPending() && !exporting) send();
 
   el[HANDLE_KEY] = handle;
   // A script tag in <head> can mount before <body> exists.

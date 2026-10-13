@@ -4,8 +4,9 @@
 import { html, nothing, render } from 'lit/html.js';
 import type { Corner } from './button.ts';
 import { deliver } from './deliver.ts';
-import { createDrawer } from './drawer.ts';
+import { type Exporting, createDrawer } from './drawer.ts';
 import { type FormDeps, createForm, resolveTypes } from './form.ts';
+import type { LoadExport } from './mount.ts';
 import { type Outbox, createOutbox } from './outbox.ts';
 
 /** The layout the panel opens in. All of them share one form. */
@@ -21,6 +22,8 @@ export interface PanelView extends Pick<
   /** Where the trigger button is, for the popover to anchor to. */
   readonly anchor?: { readonly rect: DOMRect; readonly corner: Corner } | undefined;
   readonly close: () => void;
+  /** The export chunk, in the npm build. */
+  readonly loadExport?: LoadExport | undefined;
 }
 
 /** How long the confirmation toast stays up. */
@@ -154,6 +157,7 @@ header .link { margin-left: auto; }
 .entry { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--_border); border-radius: 6px; }
 .summary { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .meta { margin: 0; font-size: 12px; opacity: 0.8; }
+.warning { margin: 0; font-size: 12px; font-weight: 600; }
 select { font: inherit; color: inherit; background: var(--_bg); border: 1px solid var(--_border); border-radius: 6px; padding: 4px; }
 .toast {
   --_bg: var(--field-notes-bg, light-dark(#fff, #1e1e1e));
@@ -341,7 +345,24 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   };
   target.redraw = redraw;
   let mode: 'form' | 'notes' = 'form';
-  const drawer = createDrawer({ outbox: target.outbox, types: resolveTypes(view.options), redraw });
+  const { options } = view;
+  const exporting: Exporting | undefined =
+    options.mode === 'export'
+      ? {
+          load: view.loadExport,
+          retention: (options.exportRetentionDays ?? 7) * 86_400_000,
+          warnAt: {
+            notes: options.storageWarning?.notes ?? 50,
+            bytes: (options.storageWarning?.megabytes ?? 100) * 1_000_000,
+          },
+        }
+      : undefined;
+  const drawer = createDrawer({
+    outbox: target.outbox,
+    types: resolveTypes(options),
+    redraw,
+    exporting,
+  });
   const showMode = (next: 'form' | 'notes'): void => {
     mode = next;
     if (mode === 'notes') void drawer.load();
@@ -362,6 +383,10 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
       showToast(target, 'Note added');
     },
   });
+  const myNotes = (): string =>
+    target.pending
+      ? `My notes (${String(target.pending)} ${exporting ? 'not exported' : 'not sent'})`
+      : 'My notes';
   const draw = (): void => {
     render(
       html`<dialog
@@ -389,7 +414,7 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
                     showMode('notes');
                   }}
                 >
-                  My notes${target.pending ? ` (${String(target.pending)} not sent)` : ''}
+                  ${myNotes()}
                 </button>`
               : html`<button
                   type="button"

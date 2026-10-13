@@ -6,6 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./bundle": "./src/bundle.ts",
     "./id": "./src/id.ts",
     "./note": "./src/note.ts"
   },

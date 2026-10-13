@@ -329,7 +329,7 @@ describe('outbox prune', () => {
     await outbox.flush(fakeTransport().transport);
     clock.mockReturnValue(now + 1);
     await outbox.add(waiting);
-    await outbox.prune(5_000);
+    await outbox.prune('delivered', 5_000);
     expect((await outbox.list()).map((e) => e.note.body)).toEqual(['recent', 'waiting']);
   });
 
@@ -345,7 +345,7 @@ describe('outbox prune', () => {
       added: Date.now() - 10_000,
     });
     database.close();
-    await outbox.prune(5_000);
+    await outbox.prune('delivered', 5_000);
     expect(await outbox.list()).toEqual([]);
   });
 });
@@ -437,5 +437,49 @@ describe('a note being sent', () => {
     });
     const retry = fakeTransport();
     expect(await outbox.flush(retry.transport)).toMatchObject({ delivered: 1 });
+  });
+});
+
+describe('outbox export', () => {
+  it('marks only the given pending notes exported, and forgets the export before', async () => {
+    const counts: number[] = [];
+    const outbox = open((pending) => counts.push(pending));
+    const first = note('first');
+    await outbox.add(first);
+    await outbox.markExported([first.id], 1000);
+    const second = note('second');
+    const late = note('added during the export');
+    await outbox.add(second);
+    await outbox.add(late);
+    await outbox.markExported([second.id, 'not-there'], 2000);
+    expect(
+      (await outbox.list()).map(({ note, state, exportedAt }) => [note.body, state, exportedAt]),
+    ).toEqual([
+      ['second', 'exported', 2000],
+      ['added during the export', 'pending', undefined],
+    ]);
+    expect(counts.at(-1)).toBe(1);
+  });
+
+  it('leaves a note that is no longer pending as it is', async () => {
+    const outbox = open();
+    const sent = note('sent');
+    await outbox.add(sent);
+    await outbox.flush(fakeTransport().transport);
+    await outbox.markExported([sent.id], 1000);
+    expect((await outbox.list())[0]).toMatchObject({ state: 'delivered' });
+  });
+
+  it('forgets the last export once it is older than the given age', async () => {
+    const outbox = open();
+    const exported = note('exported');
+    const waiting = note('waiting');
+    await outbox.add(exported);
+    await outbox.add(waiting);
+    await outbox.markExported([exported.id], Date.now() - 10_000);
+    await outbox.prune('exported', 20_000);
+    expect(await outbox.list()).toHaveLength(2);
+    await outbox.prune('exported', 5_000);
+    expect((await outbox.list()).map((e) => e.note.body)).toEqual(['waiting']);
   });
 });

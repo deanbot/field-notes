@@ -2,25 +2,39 @@
   {
     "name": "widget entry (activation stub)",
     "path": "packages/field-notes/dist/index.js",
-    "limit": "3.5 kB",
+    "limit": "3.75 kB",
     "gzip": true
   },
   {
-    "name": "widget panel (lazy: the panel chunk and the outbox chunk it shares with delivery)",
-    "path": ["packages/field-notes/dist/panel-*.js", "packages/field-notes/dist/outbox-*.js"],
+    "name": "widget panel (lazy: the panel chunk, and the outbox and schema chunks it shares)",
+    "path": [
+      "packages/field-notes/dist/panel-*.js",
+      "packages/field-notes/dist/outbox-*.js",
+      "packages/field-notes/dist/schema-*.js"
+    ],
     "limit": "20 kB",
     "gzip": true
   },
   {
-    "name": "delivery (lazy: the sync chunk and the outbox chunk)",
-    "path": ["packages/field-notes/dist/sync-*.js", "packages/field-notes/dist/outbox-*.js"],
+    "name": "delivery (lazy: the sync chunk, and the outbox and schema chunks)",
+    "path": [
+      "packages/field-notes/dist/sync-*.js",
+      "packages/field-notes/dist/outbox-*.js",
+      "packages/field-notes/dist/schema-*.js"
+    ],
     "limit": "12 kB",
+    "gzip": true
+  },
+  {
+    "name": "export (lazy: the export chunk and the schema chunk)",
+    "path": ["packages/field-notes/dist/export-*.js", "packages/field-notes/dist/schema-*.js"],
+    "limit": "32 kB",
     "gzip": true
   },
   {
     "name": "script-tag build (stub, panel and delivery)",
     "path": "packages/field-notes/dist/widget.iife.js",
-    "limit": "24 kB",
+    "limit": "25 kB",
     "gzip": true
   }
 ]
