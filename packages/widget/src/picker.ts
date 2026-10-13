@@ -55,7 +55,7 @@ export interface Picked {
 
 /**
  * Lets the user point at a page element. Resolves with what the note records,
- * or undefined when cancelled (Esc) or aborted. Pointer aims and clicks; Alt+wheel
+ * or undefined when cancelled (Esc) or aborted. Pointer aims and clicks, and a plain wheel scrolls; Alt+wheel
  * or ↑/↓ climb to the parent and back down; ←/→ move between siblings; Enter
  * picks. Shadow roots, iframes and canvases are picked whole, as the host
  * element: nothing inside them is guessed at.
@@ -117,6 +117,11 @@ export function pickElement(root: ShadowRoot, signal: AbortSignal): Promise<Pick
     current = el;
     draw();
   };
+  /** A keyboard or Alt+wheel move: nothing picked may be out of sight. */
+  const move = (el: Element | undefined, keepTrail = false): void => {
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    show(el, keepTrail);
+  };
 
   /** The page element under a point; none over the widget's own UI. */
   const hit = (x: number, y: number): Element | undefined => {
@@ -139,17 +144,51 @@ export function pickElement(root: ShadowRoot, signal: AbortSignal): Promise<Pick
     const parent = current?.parentElement;
     if (!current || !parent || !usable(parent)) return;
     trail.push(current);
-    show(parent, true);
+    move(parent, true);
   };
   const down = (): void => {
     let child = trail.pop() ?? current?.firstElementChild;
     while (child && !usable(child)) child = child.nextElementSibling;
-    if (child) show(child, true);
+    if (child) move(child, true);
   };
   const sideways = (next: boolean): void => {
     let el = next ? current?.nextElementSibling : current?.previousElementSibling;
     while (el && !usable(el)) el = next ? el.nextElementSibling : el.previousElementSibling;
-    if (el) show(el);
+    if (el) move(el);
+  };
+
+  /**
+   * A plain wheel: the layer takes it, so the page never scrolls by itself.
+   * Scroll what it would have: the nearest box under the pointer with room to
+   * go that way, else the page.
+   */
+  const scroll = (event: WheelEvent): void => {
+    let { deltaX: dx, deltaY: dy } = event;
+    if (event.shiftKey && !dx) [dx, dy] = [dy, 0];
+    const room = (overflow: string, delta: number, at: number, size: number, all: number) =>
+      /auto|scroll|overlay/.test(overflow) &&
+      (delta < 0 ? at > 0 : delta > 0 && at + size < all - 1);
+    let el = hit(event.clientX, event.clientY);
+    while (el) {
+      const { overflowX, overflowY } = getComputedStyle(el);
+      if (
+        room(overflowY, dy, el.scrollTop, el.clientHeight, el.scrollHeight) ||
+        room(overflowX, dx, el.scrollLeft, el.clientWidth, el.scrollWidth)
+      ) {
+        break;
+      }
+      el = el.parentElement ?? undefined;
+    }
+    // deltaMode: 0 pixels, 1 lines, 2 pages.
+    const [w, h] =
+      event.deltaMode === 2
+        ? el
+          ? [el.clientWidth, el.clientHeight]
+          : [innerWidth, innerHeight]
+        : event.deltaMode
+          ? [16, 16]
+          : [1, 1];
+    (el ?? window).scrollBy({ left: dx * w, top: dy * h, behavior: 'instant' });
   };
 
   return new Promise((resolve) => {
@@ -203,9 +242,10 @@ export function pickElement(root: ShadowRoot, signal: AbortSignal): Promise<Pick
     addEventListener(
       'wheel',
       (event) => {
-        if (!event.altKey) return; // a plain wheel scrolls the page
+        if (event.ctrlKey) return; // zooms
         swallow(event);
-        if (event.deltaY < 0) up();
+        if (!event.altKey) scroll(event);
+        else if (event.deltaY < 0) up();
         else if (event.deltaY > 0) down();
       },
       { ...capture, passive: false },
@@ -236,7 +276,7 @@ export function pickElement(root: ShadowRoot, signal: AbortSignal): Promise<Pick
         event.preventDefault();
         event.stopImmediatePropagation();
         if (current || event.key === 'Escape') action();
-        else show(start());
+        else move(start());
       },
       capture,
     );

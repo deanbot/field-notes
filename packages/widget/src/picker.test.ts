@@ -290,6 +290,40 @@ describe('the element picker', () => {
     expect(label()).toBe('a “Pro plan”');
   });
 
+  it('brings what the keyboard moves to into view', async () => {
+    page(`<p class="first">first</p><div style="height:3000px"></div><p class="last">last</p>`);
+    await mount().open();
+    await startPicking();
+    aim(find('.first'));
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}');
+    expect(label()).toBe('p “last”');
+    const last = find('.last').getBoundingClientRect();
+    expect(last.bottom).toBeLessThanOrEqual(innerHeight);
+    expect(highlight().toJSON()).toEqual(last.toJSON());
+    await userEvent.keyboard('{ArrowLeft}{ArrowLeft}');
+    expect(find('.first').getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+    scrollTo(0, 0);
+  });
+
+  it('scrolls the box under the pointer with a plain wheel, then the page past its end', async () => {
+    page(`
+      <div class="inner" style="height:100px;overflow:auto"><div style="height:200px">inner</div></div>
+      <div style="height:3000px"></div>`);
+    await mount().open();
+    await startPicking();
+    const inner = find('.inner');
+    pointer('wheel', inner, { deltaY: 2, deltaMode: WheelEvent.DOM_DELTA_LINE });
+    expect(inner.scrollTop).toBe(32);
+    expect(scrollY).toBe(0);
+    pointer('wheel', inner, { deltaY: 1, deltaMode: WheelEvent.DOM_DELTA_PAGE });
+    expect(inner.scrollTop).toBe(100);
+    pointer('wheel', inner, { deltaY: 40 }); // at its end: the page scrolls
+    expect(scrollY).toBe(40);
+    pointer('wheel', inner, { deltaY: 40, shiftKey: true }); // sideways, and nothing is wider
+    expect(scrollY).toBe(40);
+    scrollTo(0, 0);
+  });
+
   it("picks the host of a shadow root, an iframe or a canvas, not what's inside", async () => {
     page(`
       <div class="host" style="display:block;width:120px;height:40px"></div>
@@ -401,5 +435,16 @@ describe('the element picker, with a real pointer', () => {
       expect(scrollY).toBeGreaterThan(0);
     });
     scrollTo(0, 0);
+  });
+
+  it('scrolls an app shell, whose page never scrolls, with a plain wheel', async () => {
+    page(`<main class="shell" style="position:fixed;inset:0;overflow:auto">
+      <div style="height:3000px"></div></main>`);
+    await mount().open();
+    await startPicking();
+    await userEvent.wheel(picking(), { delta: { y: 200 } });
+    await vi.waitFor(() => {
+      expect(find('.shell').scrollTop).toBeGreaterThan(0);
+    });
   });
 });

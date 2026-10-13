@@ -13,6 +13,13 @@ const HOOK_ATTRS = new Set([...TEST_ATTRS, 'aria-label', 'role', 'name']);
 
 const MASK = '[data-field-notes-mask]';
 
+/** Attributes that hold what the page says, which masking hides. */
+const WORDS = new Set(['aria-label', 'name']);
+
+/** Inside masked content, or holding some. */
+const masked = (el: Element): boolean =>
+  el.closest(MASK) !== null || el.querySelector(MASK) !== null;
+
 /**
  * Looks machine-made: React's `:r1:`, `ember123`, or a hash such as the
  * `x7Yz2` in `Card_title__x7Yz2` (letters and digits mixed, digits twice).
@@ -44,7 +51,7 @@ function resolvesTo(selector: string, el: Element): boolean {
 }
 
 /** The element's own stable hooks, best first. */
-function hooks(el: Element): string[] {
+function hooks(el: Element, words: boolean): string[] {
   const tag = CSS.escape(el.localName);
   const found: string[] = [];
   if (stableId(el.id)) found.push(`#${CSS.escape(el.id)}`);
@@ -52,7 +59,7 @@ function hooks(el: Element): string[] {
     const value = el.getAttribute(name);
     if (value) found.push(`[${name}="${CSS.escape(value)}"]`);
   }
-  for (const name of ['aria-label', 'role']) {
+  for (const name of words ? ['aria-label', 'role'] : ['role']) {
     const value = el.getAttribute(name);
     if (value && hookAttr(name, value)) found.push(`${tag}[${name}="${CSS.escape(value)}"]`);
   }
@@ -76,16 +83,18 @@ function path(el: Element): string {
  * A selector that finds `el` again: its own `id`, test id, `aria-label` or
  * `role` when one is unique; otherwise the shortest unique path finder can
  * build from those and hand-written classes, keeping hashed or generated
- * names out. `:nth-child` only when nothing else tells it apart.
+ * names out. `:nth-child` only when nothing else tells it apart. No
+ * `aria-label` or `name` when the element is masked.
  */
 export function selectorFor(el: Element): string {
-  for (const hook of hooks(el)) if (resolvesTo(hook, el)) return hook;
+  const words = !masked(el);
+  for (const hook of hooks(el, words)) if (resolvesTo(hook, el)) return hook;
   try {
     const found = finder(el, {
       root: document.documentElement,
       idName: stableId,
       className: stableClass,
-      attr: hookAttr,
+      attr: (name, value) => hookAttr(name, value) && (words || !WORDS.has(name)),
       timeoutMs: 500,
     });
     if (resolvesTo(found, el)) return found;
@@ -95,18 +104,21 @@ export function selectorFor(el: Element): string {
   return path(el);
 }
 
-/** The text a reader sees in `el`, on one line. None from masked content. */
+/** The text a reader sees in `el`, on one line. */
 function visibleText(el: Element): string {
-  if (el.closest(MASK) || el.querySelector(MASK)) return '';
   const text = el instanceof HTMLElement ? el.innerText : el.textContent;
   return text.replace(/\s+/g, ' ').trim().slice(0, MAX_ELEMENT_TEXT);
 }
 
-/** The note's `element`: rect in CSS pixels, relative to the viewport. */
+/**
+ * The note's `element`: rect in CSS pixels, relative to the viewport. No text
+ * or `aria-label` when the element is masked.
+ */
 export function describeElement(el: Element): NoteElement {
   const box = el.getBoundingClientRect();
-  const text = visibleText(el);
-  const ariaLabel = el.getAttribute('aria-label')?.trim();
+  const hidden = masked(el);
+  const text = hidden ? '' : visibleText(el);
+  const ariaLabel = hidden ? undefined : el.getAttribute('aria-label')?.trim();
   return {
     selector: selectorFor(el),
     tag: el.localName,

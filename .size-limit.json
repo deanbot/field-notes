@@ -34,7 +34,7 @@
   {
     "name": "element picker (lazy: the picker chunk, with finder)",
     "path": "packages/field-notes/dist/picker-*.js",
-    "limit": "4 kB",
+    "limit": "4.25 kB",
     "gzip": true
   },
   {

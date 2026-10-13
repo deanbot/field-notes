@@ -186,6 +186,21 @@ describe('describeElement', () => {
     expect(describeElement(find('.card span')).text).toBe('visible');
   });
 
+  it('keeps no aria-label or name from masked content, in the selector either', () => {
+    fixture(`
+      <div data-field-notes-mask>
+        <button aria-label="Email jane@example.com">✉</button><button aria-label="Call 555 0100">☎</button>
+        <input name="jane@example.com"><input name="bob@example.com">
+      </div>
+      <section aria-label="Card ending 4242"><p data-field-notes-mask>4242</p></section>`);
+    for (const el of document.querySelectorAll('button, input, section')) {
+      const described = describeElement(el);
+      expect(described).not.toHaveProperty('ariaLabel');
+      expect(described.selector).not.toMatch(/jane|bob|555|4242/);
+      expect(document.querySelector(described.selector)).toBe(el);
+    }
+  });
+
   it('leaves out text and aria-label when there are none', () => {
     fixture(`<svg><path d="M0 0h8"/></svg>`);
     const described = describeElement(find('path'));
