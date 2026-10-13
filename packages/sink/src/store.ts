@@ -46,7 +46,7 @@ export interface Store {
 const NOTE_FILE = 'note.md';
 const MAX_CLASHES = 8;
 
-const hasCode = (error: unknown, code: string): boolean =>
+export const hasCode = (error: unknown, code: string): boolean =>
   error instanceof Error && (error as NodeJS.ErrnoException).code === code;
 
 /** Temp names start with a dot, which no attachment name can. */
@@ -63,7 +63,7 @@ export const DEFAULT_GITIGNORE = '*\n';
  * Creates `dir/items/`, and `dir/.gitignore` if there's none (never
  * overwriting one the user edited). `false` writes no `.gitignore`.
  */
-async function setUpSinkDir(
+export async function setUpSinkDir(
   dir: string,
   gitignore: string | false = DEFAULT_GITIGNORE,
 ): Promise<void> {
@@ -72,6 +72,30 @@ async function setUpSinkDir(
   await writeFile(join(dir, '.gitignore'), gitignore, { flag: 'wx' }).catch((error: unknown) => {
     if (!hasCode(error, 'EEXIST')) throw error;
   });
+}
+
+/**
+ * Writes a note into a new directory, `items/<id>-<slug>`, and returns its
+ * name. Rejects with `EEXIST` when that directory exists: it's never reused.
+ * Attachments land first and `note.md` last, each atomically; on a failure
+ * the directory goes.
+ */
+export async function writeNoteDir(
+  items: string,
+  note: Note,
+  attachments: Iterable<readonly [string, Uint8Array]>,
+): Promise<string> {
+  const name = noteDirName(note);
+  const dir = join(items, name);
+  await mkdir(dir);
+  try {
+    for (const [file, bytes] of attachments) await writeAtomic(dir, file, bytes);
+    await writeAtomic(dir, NOTE_FILE, serializeNote(note));
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
+  return name;
 }
 
 export function createStore(root: string, options: StoreOptions): Store {
@@ -98,10 +122,9 @@ export function createStore(root: string, options: StoreOptions): Store {
       const checked = NoteSchema.safeParse({ ...fields, id: ulid() });
       if (!checked.success) throw new InvalidNoteError(checked.error.message);
       const note: Note = checked.data;
-      const name = noteDirName(note);
-      const dir = join(items, name);
+      let name: string;
       try {
-        await mkdir(dir);
+        name = await writeNoteDir(items, note, attachments);
       } catch (error) {
         if (hasCode(error, 'EEXIST')) continue;
         // Someone deleted `.field-notes` while the sink ran: set it up again.
@@ -111,13 +134,6 @@ export function createStore(root: string, options: StoreOptions): Store {
           await setUp();
           continue;
         }
-        throw error;
-      }
-      try {
-        for (const [file, bytes] of attachments) await writeAtomic(dir, file, bytes);
-        await writeAtomic(dir, NOTE_FILE, serializeNote(note));
-      } catch (error) {
-        await rm(dir, { recursive: true, force: true });
         throw error;
       }
       return { id: note.id, dir: `items/${name}` };

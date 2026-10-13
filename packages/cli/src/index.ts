@@ -1,5 +1,6 @@
+import { readFile, stat } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { isOriginPattern } from '@field-notes/sink';
+import { MAX_IMPORT_BYTES, importBundle, isOriginPattern } from '@field-notes/sink';
 import { serve } from './serve.ts';
 
 export interface CliIo {
@@ -22,6 +23,10 @@ Commands:
                         Also take notes from this page origin (repeatable),
                         such as http://app.test:3000 or http://app.test:*.
                         Loopback over http and https is always allowed.
+  import <export.zip>
+           Add the notes in a zip exported from the widget to --dir
+           --dir <path> Where notes go (default .field-notes)
+           Notes already there are skipped, so importing again is safe.
 
 Options:
   -h, --help     Show this help
@@ -74,8 +79,50 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
     }
     return runServe(port, values.dir ?? '.field-notes', origins, io);
   }
+  if (command === 'import') {
+    const [, zip, ...extra] = positionals;
+    if (zip === undefined || extra.length > 0) {
+      io.stderr(`import takes one zip file\n\n${USAGE}`);
+      return 2;
+    }
+    return runImport(zip, values.dir ?? '.field-notes', io);
+  }
   io.stderr(`Unknown command: ${command}\n\n${USAGE}`);
   return 2;
+}
+
+const plural = (n: number, word: string): string => `${String(n)} ${word}${n === 1 ? '' : 's'}`;
+
+async function runImport(zip: string, dir: string, io: CliIo): Promise<number> {
+  let bytes: Uint8Array;
+  try {
+    if ((await stat(zip)).size > MAX_IMPORT_BYTES) {
+      io.stderr(`${zip} is over ${String(MAX_IMPORT_BYTES / 2 ** 20)} MiB; not importing it.\n`);
+      return 1;
+    }
+    bytes = await readFile(zip);
+  } catch (error) {
+    io.stderr(`Can't read ${zip}: ${(error as Error).message}\n`);
+    return 1;
+  }
+  let outcome;
+  try {
+    outcome = await importBundle(dir, bytes);
+  } catch (error) {
+    io.stderr(`Couldn't import into ${dir}: ${(error as Error).message}\n`);
+    return 1;
+  }
+  if (!outcome.ok) {
+    io.stderr(`${zip} is not a field-notes export, or is damaged: ${outcome.error.message}\n`);
+    return 1;
+  }
+  const { imported, skipped, conflicts } = outcome.value;
+  const already = skipped.length ? ` (${plural(skipped.length, 'note')} already there)` : '';
+  io.stdout(`Imported ${plural(imported.length, 'note')} into ${dir}${already}.\n`);
+  for (const { id, dir: taken } of conflicts) {
+    io.stderr(`Conflict: ${taken} holds another note, so ${id} was not imported.\n`);
+  }
+  return conflicts.length ? 1 : 0;
 }
 
 async function runServe(
