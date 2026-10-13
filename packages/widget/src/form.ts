@@ -68,11 +68,13 @@ function awaitShot(
     }, ms);
     const done = (image: Screenshot | undefined): void => {
       clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
       resolve(image);
     };
-    signal.addEventListener('abort', () => {
+    const onAbort = (): void => {
       done(undefined);
-    });
+    };
+    signal.addEventListener('abort', onAbort);
     void shot.image.then(done);
   });
 }

@@ -1,5 +1,5 @@
 import type { Note } from '@field-notes/core/note';
-import { userEvent } from 'vitest/browser';
+import { page as browser, userEvent } from 'vitest/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deliver } from './deliver.ts';
 import { TAG_NAME } from './element.ts';
@@ -121,7 +121,8 @@ describe('captureScreenshot', () => {
     expect(shot.at(250, 350)).toBe('255,255,0');
   });
 
-  it('never shows masked content: text, its overflow, pseudo-elements, passwords, in shadow roots', async () => {
+  it('never shows masked content: text, its overflow, pseudo-elements, passwords, images, shadow roots, same-origin frames', async () => {
+    const red = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="red"/></svg>')}`;
     page(
       `
       <p data-field-notes-mask style="color:rgb(255,0,0);background:rgb(255,0,0)">4111 1111 1111 1111</p>
@@ -129,13 +130,54 @@ describe('captureScreenshot', () => {
       <div data-field-notes-mask class="before" style="height:20px"></div>
       <div data-field-notes-mask><span style="position:absolute;left:200px;top:300px;width:40px;height:40px;background:rgb(255,0,0)"></span></div>
       <input type="password" value="hunter2" style="color:rgb(255,0,0);font-size:40px">
-      <div class="host"></div>`,
+      <img data-field-notes-mask src="${red}" alt="Jane's passport" width="40" height="40">
+      <div class="host"></div>
+      <iframe class="frame" style="width:200px;height:60px;border:0"></iframe>`,
       `.before::before { content: 'SECRET'; position: absolute; left: 250px; top: 500px; color: rgb(255,0,0); font-size: 40px; }`,
     );
     find('.host').attachShadow({ mode: 'open' }).innerHTML =
       '<div data-field-notes-mask style="height:40px;background:rgb(255,0,0)">shadow</div>';
+    const frame = find('.frame');
+    if (!(frame instanceof HTMLIFrameElement)) throw new Error('no frame');
+    await new Promise((loaded) => {
+      frame.addEventListener('load', loaded, { once: true });
+      frame.srcdoc =
+        '<body style="margin:0"><div data-field-notes-mask style="height:60px;background:rgb(255,0,0)">in a frame</div></body>';
+    });
     const shot = await shoot();
     expect(shot.some(reddish)).toBe(false);
+  });
+
+  it('paints over masked boxes where they are on screen: scrolled, fixed, sticky, in a scrolled box, in a modal dialog', async () => {
+    // An inset shadow is drawn from the element's own style, which the copy
+    // keeps: only the paint hides it.
+    const fill = (size: number): string => `box-shadow:inset 0 0 0 ${String(size)}px rgb(255,0,0)`;
+    page(`
+      <div data-field-notes-mask style="position:fixed;top:0;left:10px;width:100px;height:40px;${fill(50)}"></div>
+      <div style="height:600px;width:3000px"></div>
+      <section style="height:3000px">
+        <div data-field-notes-mask style="position:sticky;top:60px;margin-left:100px;width:120px;height:30px;${fill(60)}"></div>
+      </section>
+      <div data-field-notes-mask style="position:absolute;top:1100.5px;left:150.3px;width:50px;height:50px;${fill(50)}"></div>
+      <div class="inner" style="position:absolute;top:1300px;left:300px;width:100px;height:100px;overflow:auto">
+        <div style="height:300px"></div><div data-field-notes-mask style="height:60px;${fill(60)}"></div>
+      </div>
+      <dialog class="modal" style="padding:0;border:0"><div data-field-notes-mask style="width:80px;height:40px;${fill(40)}"></div></dialog>`);
+    find('.inner').scrollTop = 300;
+    scrollTo(100, 1000);
+    const modal = find('.modal');
+    if (!(modal instanceof HTMLDialogElement)) throw new Error('no dialog');
+    modal.showModal();
+    const centres = [...document.querySelectorAll('[data-field-notes-mask]')].map((el) => {
+      const { x, y, width, height } = el.getBoundingClientRect();
+      return { x: x + width / 2, y: y + height / 2 };
+    });
+    expect(centres).toHaveLength(5);
+    const shot = await shoot();
+    modal.close();
+    expect(shot.some(reddish)).toBe(false);
+    // And the paint is where each box is on screen.
+    for (const { x, y } of centres) expect(shot.at(x, y)).toBe('136,136,136');
   });
 
   it('leaves out the element it excludes, and what is in it', async () => {
@@ -297,6 +339,34 @@ describe('the screenshot in the widget', () => {
       expect(shadow().querySelector('dialog')?.open).toBe(true);
     });
     expect(retaken).toHaveBeenCalledTimes(2);
+  });
+
+  it('fits in the actions row on a 320px phone, with a long pick beside it', async () => {
+    await browser.viewport(320, 568);
+    try {
+      page(`<button class="buy">Buy</button>`);
+      vi.mocked(pickElement).mockResolvedValue({
+        element: { selector: '.buy', tag: 'button', rect: { x: 0, y: 0, w: 10, h: 10 } },
+        label: 'button “Upgrade to the annual plan and save”',
+      });
+      await mount({ surface: 'sheet' }).open();
+      await userEvent.click(button('Pick element'));
+      await vi.waitFor(() => {
+        expect(shadow().querySelector('.picked')).not.toBeNull();
+        expect(thumb()?.src).toMatch(/^blob:/);
+      });
+      const actions = shadow().querySelector('.actions');
+      if (!actions) throw new Error('no actions row');
+      expect(actions.scrollWidth).toBeLessThanOrEqual(actions.clientWidth);
+      const row = actions.getBoundingClientRect();
+      for (const el of [thumb(), button('Remove screenshot'), button('Add note')]) {
+        const box = el?.getBoundingClientRect();
+        expect(box?.left).toBeGreaterThanOrEqual(row.left);
+        expect(box?.right).toBeLessThanOrEqual(row.right);
+      }
+    } finally {
+      await browser.viewport(414, 896);
+    }
   });
 
   it('goes without one when it fails', async () => {

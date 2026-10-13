@@ -48,18 +48,29 @@ function maskRects(): DOMRect[] {
   });
 }
 
+const isElement = (node: Node): node is Element => node.nodeType === Node.ELEMENT_NODE;
+
 /**
  * Empties a masked element in the copy, before it's drawn: no text, value,
- * children, background image or pseudo-elements (their styles hang off a
- * class). The paint over its box on the canvas is what guarantees it.
+ * children, background, image source, alt text or pseudo-elements (their
+ * styles hang off a class). The paint over its box on the canvas is what
+ * guarantees it. A same-origin iframe's document is copied in from the
+ * frame's own document: it's emptied too, so frames come out blank, and
+ * nothing inside one escapes the masking.
  */
 function blank(node: Node): void {
+  // A frame's nodes are from another realm: `instanceof` can't see them.
+  if (isElement(node) && node.ownerDocument !== document && node.localName === 'html') {
+    node.replaceChildren();
+    return;
+  }
   if (!(node instanceof HTMLElement || node instanceof SVGElement) || !node.matches(MASKED)) return;
   node.replaceChildren();
-  node.removeAttribute('value');
-  node.removeAttribute('class');
+  for (const name of ['value', 'class', 'src', 'srcset', 'href', 'alt', 'poster']) {
+    node.removeAttribute(name);
+  }
   node.style.color = 'transparent';
-  node.style.backgroundImage = 'none';
+  node.style.background = 'none';
 }
 
 const isTransparent = (color: string): boolean =>
@@ -169,8 +180,11 @@ export function captureScreenshot(exclude: Element): Capture {
     const paint = canvas.getContext('2d');
     if (!paint) return undefined;
     paint.fillStyle = MASK_FILL;
-    for (const rect of rects) {
-      paint.fillRect(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale);
+    // Whole device pixels: a partly covered one would show a blend.
+    for (const { left, top, right, bottom } of rects) {
+      const x = Math.floor(left * scale);
+      const y = Math.floor(top * scale);
+      paint.fillRect(x, y, Math.ceil(right * scale) - x, Math.ceil(bottom * scale) - y);
     }
     return stopped() ? undefined : encode(canvas);
   };
