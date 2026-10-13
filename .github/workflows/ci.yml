@@ -76,4 +76,5 @@ jobs:
           BROWSERS: chromium,firefox,webkit
       - name: SPIKE real tab capture in Chromium (to be removed)
         if: always()
+        timeout-minutes: 3
         run: node scripts/spike-tab.mjs
