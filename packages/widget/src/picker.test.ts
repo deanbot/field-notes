@@ -94,7 +94,13 @@ function pointer(type: string, el: Element, init: PointerEventInit & WheelEventI
   const target = picking();
   const Event = type === 'click' ? MouseEvent : type === 'wheel' ? WheelEvent : PointerEvent;
   target.dispatchEvent(
-    new Event(type, { bubbles: true, pointerType: 'mouse', ...centre(el), ...init }),
+    new Event(type, {
+      bubbles: true,
+      composed: true,
+      pointerType: 'mouse',
+      ...centre(el),
+      ...init,
+    }),
   );
 }
 const aim = (el: Element): void => {
@@ -343,5 +349,57 @@ describe('the element picker', () => {
     await h.open();
     expect(dialog()?.open).toBe(true);
     expect(picked()).toBe('');
+  });
+});
+
+describe('the element picker, with a real pointer', () => {
+  it('takes the click itself: the page under it never sees it', async () => {
+    page(`<button class="buy" style="padding:20px">Buy</button>`);
+    const clicked = vi.fn();
+    find('.buy').addEventListener('click', clicked);
+    await mount().open();
+    await startPicking();
+    await userEvent.hover(find('.buy'), { force: true });
+    expect(highlight().toJSON()).toEqual(find('.buy').getBoundingClientRect().toJSON());
+    await userEvent.click(find('.buy'), { force: true });
+    await back();
+    expect(clicked).not.toHaveBeenCalled();
+    expect(picked()).toBe('button “Buy”');
+  });
+
+  it("picks inside the host's own modal dialog, which stays untouched", async () => {
+    page(`<dialog class="checkout"><button class="delete">Delete</button></dialog>`);
+    const checkout = find('.checkout') as HTMLDialogElement;
+    checkout.showModal();
+    const deleted = vi.fn();
+    find('.delete').addEventListener('click', deleted);
+    await mount().open();
+    await startPicking();
+    await userEvent.hover(find('.delete'), { force: true });
+    expect(label()).toBe('button “Delete”');
+    await userEvent.click(find('.delete'), { force: true });
+    await back();
+    expect(deleted).not.toHaveBeenCalled();
+    expect(picked()).toBe('button “Delete”');
+    await startPicking();
+    await userEvent.keyboard('{Escape}');
+    await back();
+    expect(checkout.open).toBe(true);
+  });
+
+  it('scrolls the page with a plain wheel, but not with Alt+wheel', async () => {
+    page(`<div style="height:3000px"></div>`);
+    await mount().open();
+    await startPicking();
+    // The wheel turns over the middle of the layer, wherever that is.
+    await userEvent.keyboard('{Alt>}');
+    await userEvent.wheel(picking(), { delta: { y: -100 } });
+    await userEvent.keyboard('{/Alt}');
+    expect(scrollY).toBe(0);
+    await userEvent.wheel(picking(), { delta: { y: 200 } });
+    await vi.waitFor(() => {
+      expect(scrollY).toBeGreaterThan(0);
+    });
+    scrollTo(0, 0);
   });
 });

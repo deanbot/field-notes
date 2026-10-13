@@ -163,37 +163,55 @@ export function pickElement(root: ShadowRoot, signal: AbortSignal): Promise<Pick
     const on = { signal: listeners.signal };
     const capture = { ...on, capture: true };
 
-    layer.addEventListener('pointermove', aim, on);
-    layer.addEventListener(
+    // Pointer events are taken on the window, first, and go no further. The
+    // layer usually receives them, but while a host's modal dialog is open
+    // the layer is inert, and they target the page itself.
+    const swallow = (event: Event): void => {
+      event.preventDefault(); // no focus change, text selection or click action
+      event.stopImmediatePropagation();
+    };
+    for (const type of ['pointerup', 'mousedown', 'mouseup', 'dblclick', 'auxclick']) {
+      addEventListener(type, swallow, capture);
+    }
+    addEventListener(
+      'pointermove',
+      (event) => {
+        event.stopImmediatePropagation();
+        aim(event);
+      },
+      capture,
+    );
+    addEventListener(
       'pointerdown',
       (event) => {
-        event.preventDefault(); // no focus change or text selection on the page
+        swallow(event);
         // A touch has no hover: its first tap aims, and only a tap on what's
         // already shown picks.
         armed = !aim(event);
       },
-      on,
+      capture,
     );
-    layer.addEventListener(
+    addEventListener(
       'click',
-      () => {
+      (event) => {
+        swallow(event);
         if (armed && current) done(current);
         armed = false;
       },
-      on,
+      capture,
     );
-    layer.addEventListener(
+    addEventListener(
       'wheel',
       (event) => {
         if (!event.altKey) return; // a plain wheel scrolls the page
-        event.preventDefault();
+        swallow(event);
         if (event.deltaY < 0) up();
         else if (event.deltaY > 0) down();
       },
-      { ...on, passive: false },
+      { ...capture, passive: false },
     );
-    // Captured on the window: a host's own key handlers or focus trap mustn't
-    // see these keys while picking, whatever has focus.
+    // Keys too: a host's own key handlers or focus trap mustn't see these
+    // while picking, whatever has focus.
     addEventListener(
       'keydown',
       (event) => {
