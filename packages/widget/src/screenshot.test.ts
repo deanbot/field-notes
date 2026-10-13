@@ -6,7 +6,8 @@ import { TAG_NAME } from './element.ts';
 import { type FieldNotesHandle, type FieldNotesOptions, mountFieldNotes } from './mount.ts';
 import { pickElement } from './picker.ts';
 import * as screenshotModule from './screenshot.ts';
-import { MAX_BYTES, WEBP_ABOVE, captureScreenshot, encode } from './screenshot.ts';
+import { MAX_BYTES, WEBP_ABOVE, encode } from './image.ts';
+import { captureScreenshot } from './screenshot.ts';
 import type { Attachments } from './transport.ts';
 
 vi.mock('./deliver.ts', () => ({ deliver: vi.fn(() => Promise.resolve()) }));

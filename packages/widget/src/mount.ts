@@ -6,6 +6,7 @@ import { isEditableTarget } from './keyboard.ts';
 import type * as ConsoleModule from './console-errors.ts';
 import type * as ExportModule from './export.ts';
 import type * as PanelModule from './panel.ts';
+import type { Capture } from './image.ts';
 import type * as ScreenshotModule from './screenshot.ts';
 import type * as SyncModule from './sync.ts';
 import { PENDING_KEY, readPending, writePending } from './pending.ts';
@@ -264,7 +265,7 @@ export function mountFieldNotes(
 
   // Loaded alongside the panel on the first open, not after it.
   let camera: Promise<typeof ScreenshotModule> | undefined;
-  const shoot = async (): Promise<ScreenshotModule.Capture | undefined> => {
+  const shoot = async (): Promise<Capture | undefined> => {
     if (options.screenshot === 'off') return undefined;
     try {
       const { captureScreenshot } = await (camera ??= import('./screenshot.ts'));

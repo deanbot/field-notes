@@ -8,7 +8,7 @@ import { type Exporting, createDrawer } from './drawer.ts';
 import { type FormDeps, createForm, resolveTypes } from './form.ts';
 import type { LoadExport } from './mount.ts';
 import { type Outbox, createOutbox } from './outbox.ts';
-import type { Capture } from './screenshot.ts';
+import type { Capture } from './image.ts';
 
 /** The layout the panel opens in. All of them share one form. */
 export type Surface = 'popover' | 'sheet' | 'side';

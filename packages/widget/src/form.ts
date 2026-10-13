@@ -6,7 +6,7 @@ import { awaitContext, buildNote, resolveAuthor, startContext } from './capture.
 import { clearDraft, loadDraft, restoreDraft, saveDraft } from './drafts.ts';
 import type { FieldNotesOptions } from './mount.ts';
 import type { Picked } from './picker.ts';
-import type { Capture, Screenshot } from './screenshot.ts';
+import type { Capture, Screenshot } from './image.ts';
 import type { Attachments } from './transport.ts';
 
 const DEFAULT_TYPES: readonly string[] = ['bug', 'change', 'idea', 'question'];
