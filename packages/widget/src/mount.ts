@@ -6,6 +6,7 @@ import { isEditableTarget } from './keyboard.ts';
 import type * as ConsoleModule from './console-errors.ts';
 import type * as ExportModule from './export.ts';
 import type * as PanelModule from './panel.ts';
+import type * as ScreenshotModule from './screenshot.ts';
 import type * as SyncModule from './sync.ts';
 import { PENDING_KEY, readPending, writePending } from './pending.ts';
 import type { Surface } from './panel.ts';
@@ -62,6 +63,12 @@ export interface FieldNotesOptions {
   onOpen?: (() => void) | undefined;
   /** Called once after each surface closes, whatever closed it. Unpause here. */
   onClose?: (() => void) | undefined;
+  /**
+   * `'dom'` (default) attaches a screenshot of what's on screen, taken as the
+   * widget opens (so it isn't in it) and again after a pick. Passwords and
+   * `[data-field-notes-mask]` content are painted over. `'off'` takes none.
+   */
+  screenshot?: 'dom' | 'off' | undefined;
   /**
    * The local sink's URL. Default `/__field-notes` on the page's origin; the
    * script tag served by `field-notes serve` defaults to that server.
@@ -128,6 +135,9 @@ export function findMount(): FieldNotesHandle | undefined {
   }
   return undefined;
 }
+
+/** How long an open waits for the page to be copied before the surface covers it. */
+const CLONE_WAIT_MS = 1000;
 
 const warn = (message: string): void => {
   console.warn(`[field-notes] ${message}`);
@@ -252,6 +262,25 @@ export function mountFieldNotes(
     void sync.then((started) => started?.kick());
   };
 
+  // Loaded alongside the panel on the first open, not after it.
+  let camera: Promise<typeof ScreenshotModule> | undefined;
+  const shoot = async (): Promise<ScreenshotModule.Capture | undefined> => {
+    if (options.screenshot === 'off') return undefined;
+    try {
+      const { captureScreenshot } = await (camera ??= import('./screenshot.ts'));
+      const capture = captureScreenshot(el);
+      await Promise.race([
+        capture.cloned,
+        new Promise((resolve) => setTimeout(resolve, CLONE_WAIT_MS)),
+      ]);
+      return capture;
+    } catch (error) {
+      camera = undefined;
+      warn(`couldn't take a screenshot. ${String(error)}`);
+      return undefined;
+    }
+  };
+
   type Panel = typeof PanelModule;
   let alive = true;
   let wanted = false; // the last call was open(), not close()
@@ -272,6 +301,8 @@ export function mountFieldNotes(
       // Before anything takes focus, which can clear the page's selection.
       const selection = getSelection()?.toString();
       loading ??= import('./panel.ts');
+      // Taken before the surface renders, so it isn't in the shot.
+      const shot = shoot();
       let panel: Panel;
       try {
         panel = await loading;
@@ -279,9 +310,14 @@ export function mountFieldNotes(
         loading = undefined;
         wanted = false; // nothing opened, so the next toggle() opens again
         warn(`couldn't load the panel. ${String(error)}`);
+        void shot.then((capture) => capture?.cancel());
         return;
       }
-      if (!stillWanted()) return;
+      const capture = await shot;
+      if (!stillWanted()) {
+        capture?.cancel();
+        return;
+      }
       shown = panel;
       hook(options.onOpen);
       panel.showPanel(root, {
@@ -289,6 +325,8 @@ export function mountFieldNotes(
         anchor: button && { rect: button.getBoundingClientRect(), corner },
         options,
         selection,
+        shot: capture,
+        shoot,
         consoleErrors: () => errors?.snapshot(),
         pendingChanged: (pending: number) => {
           mirror(pending);

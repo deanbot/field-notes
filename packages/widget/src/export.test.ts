@@ -91,7 +91,7 @@ const button = (label: string): HTMLButtonElement | undefined =>
   [...shadow().querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(label));
 
 function mount(options: FieldNotesOptions = {}): FieldNotesHandle {
-  handle = mountFieldNotes({ enabled: true, mode: 'export', ...options });
+  handle = mountFieldNotes({ enabled: true, screenshot: 'off', mode: 'export', ...options });
   return handle;
 }
 

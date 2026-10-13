@@ -14,7 +14,7 @@ let trap: FocusTrap | undefined;
 const cleanups: (() => void)[] = [];
 
 function mount(options: FieldNotesOptions = {}): FieldNotesHandle {
-  handle = mountFieldNotes({ enabled: true, trigger: ['hotkey'], ...options });
+  handle = mountFieldNotes({ enabled: true, screenshot: 'off', trigger: ['hotkey'], ...options });
   return handle;
 }
 
@@ -316,7 +316,7 @@ describe('onOpen and onClose', () => {
   it('warns that a second mount drops its hooks', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     mount();
-    mountFieldNotes({ enabled: true, onOpen: () => undefined });
+    mountFieldNotes({ enabled: true, screenshot: 'off', onOpen: () => undefined });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('these are ignored'));
   });
 });

@@ -120,6 +120,8 @@ export interface NoteInput {
   readonly selection?: string | undefined;
   /** From the element picker. */
   readonly element?: NoteElement | undefined;
+  /** The screenshot's attachment name. */
+  readonly screenshot?: string | undefined;
   readonly context?: Record<string, unknown> | undefined;
   readonly consoleErrors?: readonly string[] | undefined;
   readonly now?: Date | undefined;
@@ -143,6 +145,7 @@ export function buildNote(input: NoteInput): Note {
     ...pageMetadata(),
     ...(input.element ? { element: input.element } : {}),
     ...(input.selection ? { selection: input.selection.slice(0, MAX_SELECTION) } : {}),
+    ...(input.screenshot ? { screenshot: input.screenshot } : {}),
     ...(input.consoleErrors?.length ? { consoleErrors: [...input.consoleErrors] } : {}),
     ...(input.context ? { context: input.context } : {}),
     body: input.body,

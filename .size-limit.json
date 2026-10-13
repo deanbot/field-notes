@@ -38,9 +38,15 @@
     "gzip": true
   },
   {
-    "name": "script-tag build (stub, panel, delivery and picker)",
+    "name": "screenshot (lazy: the screenshot chunk, with modern-screenshot)",
+    "path": "packages/field-notes/dist/screenshot-*.js",
+    "limit": "10 kB",
+    "gzip": true
+  },
+  {
+    "name": "script-tag build (stub, panel, delivery, picker and screenshot)",
     "path": "packages/field-notes/dist/widget.iife.js",
-    "limit": "28.5 kB",
+    "limit": "39 kB",
     "gzip": true
   }
 ]

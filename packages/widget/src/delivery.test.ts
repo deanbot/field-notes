@@ -48,7 +48,7 @@ const badge = (): string => query('.trigger .badge')?.textContent ?? '';
 
 async function mount(options: FieldNotesOptions = {}): Promise<FieldNotesHandle> {
   const { endpoint, token } = await startSink();
-  handle = mountFieldNotes({ enabled: true, endpoint, token, ...options });
+  handle = mountFieldNotes({ enabled: true, screenshot: 'off', endpoint, token, ...options });
   return handle;
 }
 
@@ -200,7 +200,7 @@ describe('delivery', () => {
 
   it('sends nothing without a token: notes wait in the outbox', async () => {
     const { endpoint } = await startSink();
-    handle = mountFieldNotes({ enabled: true, endpoint });
+    handle = mountFieldNotes({ enabled: true, screenshot: 'off', endpoint });
     await submit('kept here');
     await new Promise((done) => setTimeout(done, 300));
     expect(await sinkNotes()).toEqual([]);
@@ -259,7 +259,7 @@ describe('a sink on the page origin (the Vite plugin, the middleware)', () => {
 
   it('asks it for the token, so the widget needs no options', async () => {
     const sink = await sameOriginSink(['test-sink-token']);
-    handle = mountFieldNotes({ enabled: true });
+    handle = mountFieldNotes({ enabled: true, screenshot: 'off' });
     await submit('handed over');
     await vi.waitFor(async () => {
       expect(await bodies()).toEqual(['handed over']);
@@ -273,7 +273,7 @@ describe('a sink on the page origin (the Vite plugin, the middleware)', () => {
 
   it('asks again after the sink refuses a token, as after .token was replaced', async () => {
     const sink = await sameOriginSink(['stale-token-from-before', 'test-sink-token']);
-    handle = mountFieldNotes({ enabled: true });
+    handle = mountFieldNotes({ enabled: true, screenshot: 'off' });
     await submit('after a new token');
     await vi.waitFor(
       async () => {
@@ -288,7 +288,7 @@ describe('a sink on the page origin (the Vite plugin, the middleware)', () => {
   it('retries on its own when the dev server was down as the note was added', async () => {
     const sink = await sameOriginSink(['test-sink-token']);
     sink.down(true);
-    handle = mountFieldNotes({ enabled: true });
+    handle = mountFieldNotes({ enabled: true, screenshot: 'off' });
     await submit('while restarting');
     await new Promise((done) => setTimeout(done, 300));
     sink.down(false);
@@ -308,7 +308,7 @@ describe('a sink on the page origin (the Vite plugin, the middleware)', () => {
       sent.push(init?.method ?? 'GET');
       return real(input, init);
     });
-    handle = mountFieldNotes({ enabled: true });
+    handle = mountFieldNotes({ enabled: true, screenshot: 'off' });
     await submit('no sink here');
     await vi.waitFor(() => {
       expect(sent).toContain('GET');
@@ -325,6 +325,7 @@ describe('script tag served by the sink', () => {
     const { endpoint, token } = await startSink();
     const script = document.createElement('script');
     script.src = new URL('/widget.js', endpoint).href;
+    script.dataset.screenshot = 'off';
     const api = startScriptTag(script, token);
     handle = api.mount();
     await submit('From the script tag');
