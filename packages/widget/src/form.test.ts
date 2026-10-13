@@ -5,8 +5,10 @@ import { deliver } from './deliver.ts';
 import { TAG_NAME } from './element.ts';
 import { type FieldNotesHandle, type FieldNotesOptions, mountFieldNotes } from './mount.ts';
 import { TOAST_MS } from './panel.ts';
+import { pickElement } from './picker.ts';
 
 vi.mock('./deliver.ts', () => ({ deliver: vi.fn(() => Promise.resolve()) }));
+vi.mock('./picker.ts', () => ({ pickElement: vi.fn() }));
 
 const delivered = vi.mocked(deliver);
 let handle: FieldNotesHandle | undefined;
@@ -513,5 +515,22 @@ describe('teardown', () => {
     expect(clear).toHaveBeenCalledWith(timer);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(delivered).not.toHaveBeenCalled();
+  });
+});
+
+describe('the element picker', () => {
+  it('says so when it fails, and brings the panel back', async () => {
+    vi.mocked(pickElement).mockRejectedValueOnce(new Error('broken'));
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await mount().open();
+    const pick = [...shadow().querySelectorAll('button')].find(
+      (el) => el.textContent.trim() === 'Pick element',
+    );
+    if (!pick) throw new Error('no Pick element button');
+    await userEvent.click(pick);
+    await vi.waitFor(() => {
+      expect(errorText()).toBe("Couldn't use the element picker.");
+    });
+    expect(dialog()?.open).toBe(true);
   });
 });

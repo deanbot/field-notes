@@ -75,6 +75,8 @@ Required: `id`, `schema`, `status`, `created` and, in the JSON shape, `body`. Ev
 | `tags`          | string[]                  | Free-form labels.                                                                                                      |
 | `resolution`    | string \| null            | Why the note was resolved or declined.                                                                                 |
 
+`element.rect` is in CSS pixels, relative to the viewport when the element was picked.
+
 Nothing in the format is tied to a role, team or workflow. Put workflow-specific data in `type`, `tags`, `context` or extra fields.
 
 ## Rules for writers

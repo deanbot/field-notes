@@ -158,6 +158,9 @@ header .link { margin-left: auto; }
 .summary { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .meta { margin: 0; font-size: 12px; opacity: 0.8; }
 .warning { margin: 0; font-size: 12px; font-weight: 600; }
+.actions > :first-child { margin-left: -6px; }
+.actions .hint { margin-left: auto; }
+.picked { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 select { font: inherit; color: inherit; background: var(--_bg); border: 1px solid var(--_border); border-radius: 6px; padding: 4px; }
 .toast {
   --_bg: var(--field-notes-bg, light-dark(#fff, #1e1e1e));
@@ -329,16 +332,23 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
     if (!inside) view.close();
   };
 
+  /** Set while the dialog is collapsed for the element picker. */
+  let picking: AbortController | undefined;
+
   // close fires after the dialog has gone: hidePanel() removes it at once.
-  // A late event from a removed dialog mustn't close the next one.
+  // A late event from a removed dialog mustn't close the next one, and the
+  // picker's collapse isn't a close, even when the event comes after the
+  // dialog is back.
   const onClose = (event: Event): void => {
-    if ((event.currentTarget as Element).isConnected) view.close();
+    const dialog = event.currentTarget as HTMLDialogElement;
+    if (dialog.isConnected && !dialog.open && !picking) view.close();
   };
 
   let disposed = false;
   target.dispose?.();
   target.dispose = () => {
     disposed = true;
+    picking?.abort();
   };
   const redraw = (): void => {
     if (!disposed) draw();
@@ -369,8 +379,40 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
     redraw();
     root.getElementById('field-notes-mode')?.focus();
   };
+  // The page behind a modal dialog is inert, so the dialog closes while the
+  // user picks, and the same form comes back with its text.
+  const pick: FormDeps['pick'] = async () => {
+    const dialog = target.surface.querySelector('dialog');
+    if (picking || !dialog) return undefined;
+    const controller = new AbortController();
+    picking = controller;
+    // A function: TypeScript would narrow the property across the awaits.
+    const closed = (): boolean => controller.signal.aborted;
+    try {
+      const { pickElement } = await import('./picker.ts');
+      if (closed()) return undefined;
+      dialog.close();
+      try {
+        return await pickElement(root, controller.signal);
+      } finally {
+        if (!closed()) {
+          dialog.showModal();
+          caretToEnd();
+        }
+      }
+    } finally {
+      picking = undefined;
+    }
+  };
+  const caretToEnd = (): void => {
+    // A restored draft continues where it left off; WebKit would put the caret first.
+    const text = root.getElementById('field-notes-text');
+    if (text instanceof HTMLTextAreaElement)
+      text.setSelectionRange(text.value.length, text.value.length);
+  };
   const form = createForm({
     ...view,
+    pick,
     deliver: (note) => deliver(note, target.outbox),
     redraw,
     focusText: () => {
@@ -442,10 +484,7 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   // button, which was shown earlier), the page inert, Esc to close, and
   // focus handed back to whatever had it when the dialog closes.
   dialog.showModal();
-  // A restored draft continues where it left off; WebKit would put the caret first.
-  const text = root.getElementById('field-notes-text');
-  if (text instanceof HTMLTextAreaElement)
-    text.setSelectionRange(text.value.length, text.value.length);
+  caretToEnd();
   // Recount from IndexedDB: corrects a stale badge, and fills in the count
   // when there's no button to show it on.
   // The count arrives through the outbox's change callback.

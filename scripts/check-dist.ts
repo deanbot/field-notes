@@ -22,6 +22,7 @@ const LIT = 'litHtmlVersions';
 const ZOD = '_zod';
 const YAML = /YAMLParseError|yaml-1\.1/;
 const FFLATE = 'invalid zip data';
+const FINDER = 'Selector was not found';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -50,6 +51,7 @@ const stub = read('index.js');
 const panelFile = files.find((file) => /^panel-.*\.js$/.test(file));
 const syncFile = files.find((file) => /^sync-.*\.js$/.test(file));
 const exportFile = files.find((file) => /^export-.*\.js$/.test(file));
+const pickerFile = files.find((file) => /^picker-.*\.js$/.test(file));
 
 /** A chunk and every chunk it imports statically, as one text. */
 function withImports(file: string, seen = new Set<string>()): string {
@@ -60,9 +62,10 @@ function withImports(file: string, seen = new Set<string>()): string {
   return code + imports.map((m) => withImports(m[1] ?? m[2] ?? '', seen)).join('');
 }
 
-/** Whether the stub loads `file` with a dynamic import. */
-const lazyFromStub = (file: string): boolean =>
-  ['"', "'", '`'].some((q) => stub.includes(`import(${q}./${file}${q})`));
+/** Whether `code` loads `file` with a dynamic import. */
+const lazyFrom = (code: string, file: string): boolean =>
+  ['"', "'", '`'].some((q) => code.includes(`import(${q}./${file}${q})`));
+const lazyFromStub = (file: string): boolean => lazyFrom(stub, file);
 const iife = read('widget.iife.js');
 
 console.log('check-dist');
@@ -111,6 +114,28 @@ await check('export is a lazy chunk with fflate and yaml, without Lit', () => {
   const chunk = withImports(exportFile);
   assert(chunk.includes(FFLATE) && YAML.test(chunk), 'fflate or yaml is not in the export chunks');
   assert(!chunk.includes(LIT), 'Lit is in the export chunks');
+});
+
+await check(
+  'the element picker is a lazy chunk of the panel, with finder and nothing else big',
+  () => {
+    assert(pickerFile && panelFile, 'no picker or panel chunk');
+    assert(lazyFrom(read(panelFile), pickerFile), 'the panel does not lazy-load the picker');
+    assert(!withImports(panelFile).includes(FINDER), 'finder is in the panel chunks');
+    const picker = withImports(pickerFile);
+    assert(picker.includes(FINDER), 'finder is not in the picker chunk');
+    for (const [name, found] of [
+      ['Lit', picker.includes(LIT)],
+      ['Zod', picker.includes(ZOD)],
+      ['yaml or fflate', YAML.test(picker) || picker.includes(FFLATE)],
+    ] as const) {
+      assert(!found, `${name} is in the picker chunks`);
+    }
+  },
+);
+
+await check('the script-tag build has the element picker inlined (local mode picks too)', () => {
+  assert(iife.includes(FINDER), 'finder is not in the script-tag build');
 });
 
 await check(
