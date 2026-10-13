@@ -196,14 +196,33 @@ describe('export mode', () => {
     expect(downloads[3]?.bytes).toEqual(second.bytes);
   });
 
-  it('stops offering the last export after the retention period, and forgets it', async () => {
-    // About 9 ms.
-    mount({ exportRetentionDays: 1e-7 });
-    await submit('kept briefly');
+  it('offers the last export for 7 days, then stops and forgets it', async () => {
+    mount();
+    await submit('kept a week');
     await openNotes();
     await exportAll();
-    await new Promise((done) => setTimeout(done, 50));
+    await vi.waitFor(() => {
+      expect(button('Download last export again')).toBeDefined();
+    });
     handle?.close();
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 6 * 86_400_000);
+    await openNotes();
+    expect(button('Download last export again')).toBeDefined();
+    handle?.close();
+    clock.mockReturnValue(now + 7 * 86_400_000 + 1000);
+    await openNotes();
+    expect(button('Download last export again')).toBeUndefined();
+    expect(await outboxView().list()).toEqual([]);
+  });
+
+  it('keeps the last export for exportRetentionDays', async () => {
+    mount({ exportRetentionDays: 1 });
+    await submit('kept a day');
+    await openNotes();
+    await exportAll();
+    handle?.close();
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 86_400_000 + 1000);
     await openNotes();
     expect(button('Download last export again')).toBeUndefined();
     expect(await outboxView().list()).toEqual([]);

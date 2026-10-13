@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { build, createServer as createViteServer, type Rolldown } from 'vite';
+import { readBundle } from '../packages/core/src/index.ts';
 import type * as VitePluginModule from '../packages/field-notes/src/vite.ts';
 
 const dist = resolve(import.meta.dirname, '../packages/field-notes/dist');
@@ -213,6 +214,82 @@ await check(
       assert(await mounted(''), 'the widget did not stay on after ?field-notes=1');
       assert(!(await mounted('?field-notes=0')), 'the widget stayed on after ?field-notes=0');
       assert(!(await mounted('')), 'the widget came back after ?field-notes=0');
+      assert(errors.length === 0, `page errors: ${errors.join('; ')}`);
+    } finally {
+      await browser.close();
+    }
+  },
+);
+
+await check(
+  "a consumer's production build in export mode downloads a zip of the notes, sending nothing",
+  async () => {
+    const chunks = await consumerBuild(
+      `import { mountFieldNotes } from 'field-notes';\nwindow.fieldNotes = mountFieldNotes({ enabled: true, mode: 'export' });`,
+    );
+    const entry = chunks.find((chunk) => chunk.isEntry);
+    assert(entry, 'no entry chunk');
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage({ acceptDownloads: true });
+      const origin = 'http://field-notes.test';
+      const requested: string[] = [];
+      await page.route(`${origin}/**`, async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === '/') {
+          await route.fulfill({
+            contentType: 'text/html',
+            body: `<!doctype html><body><script type="module" src="/${entry.fileName}"></script></body>`,
+          });
+          return;
+        }
+        requested.push(path);
+        const chunk = chunks.find((c) => `/${c.fileName}` === path);
+        await route.fulfill(
+          chunk ? { contentType: 'text/javascript', body: chunk.code } : { status: 404 },
+        );
+      });
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      await page.goto(`${origin}/`);
+      await page.waitForFunction(() => 'fieldNotes' in window);
+
+      const open = (): Promise<void> =>
+        page.evaluate(() =>
+          (window as { fieldNotes?: { open(): Promise<void> } }).fieldNotes?.open(),
+        );
+      await open();
+      await page.locator('#field-notes-text').fill('Exported from a production build');
+      await page.keyboard.press('Control+Enter');
+      await page.locator('dialog').waitFor({ state: 'detached' });
+      await open();
+      await page.getByRole('button', { name: /^My notes/ }).click();
+      const exportButton = page.getByRole('button', { name: 'Export (1)' });
+      await exportButton.waitFor();
+      assert(
+        !requested.some((path) => /\/export-[^/]*\.js$/.test(path)),
+        'the export chunk loaded before Export was clicked',
+      );
+
+      const [download] = await Promise.all([page.waitForEvent('download'), exportButton.click()]);
+      const name = download.suggestedFilename();
+      assert(/^field-notes-\d{4}-\d{2}-\d{2}-\d{4}\.zip$/.test(name), `file name: ${name}`);
+      const zip = new Uint8Array(readFileSync(await download.path()));
+      const read = readBundle(zip);
+      assert(read.ok, `the zip is not a bundle: ${read.ok ? '' : read.error.message}`);
+      assert(
+        read.value.length === 1 && read.value[0]?.note.body === 'Exported from a production build',
+        'the zip does not hold the note',
+      );
+      assert(new TextDecoder().decode(zip).includes('index.md'), 'the zip has no index.md');
+      assert(
+        requested.some((path) => /\/export-[^/]*\.js$/.test(path)),
+        'no export chunk was loaded',
+      );
+      assert(
+        requested.every((path) => path.endsWith('.js')),
+        `requests other than chunks: ${requested.filter((path) => !path.endsWith('.js')).join(', ')}`,
+      );
       assert(errors.length === 0, `page errors: ${errors.join('; ')}`);
     } finally {
       await browser.close();
