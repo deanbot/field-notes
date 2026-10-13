@@ -5,6 +5,7 @@ import { html, type TemplateResult } from 'lit/html.js';
 import { awaitContext, buildNote, resolveAuthor, startContext } from './capture.ts';
 import { clearDraft, loadDraft, restoreDraft, saveDraft } from './drafts.ts';
 import type { FieldNotesOptions } from './mount.ts';
+import type { Picked } from './picker.ts';
 
 const DEFAULT_TYPES: readonly string[] = ['bug', 'change', 'idea', 'question'];
 
@@ -20,6 +21,8 @@ export interface FormDeps {
   /** The page's selection when the widget opened. */
   readonly selection: string | undefined;
   readonly consoleErrors: () => readonly string[] | undefined;
+  /** Collapses the panel for the element picker; undefined if cancelled. */
+  readonly pick: () => Promise<Picked | undefined>;
   /** Hands the note on. Resolves once it's safely stored; rejects if not. */
   readonly deliver: (note: Note) => Promise<void>;
   /** Aborted on unmount. */
@@ -46,6 +49,8 @@ export function createForm(deps: FormDeps): Form {
   const draft = loadDraft();
   let text = draft?.text ?? '';
   let type = draft?.type && types.includes(draft.type) ? draft.type : undefined;
+  // Not kept in the draft: after a reload the element may be gone.
+  let picked: Picked | undefined;
   let error = '';
   let busy = false;
   // Called now, so a slow callback has the whole time the form is open; the
@@ -89,6 +94,7 @@ export function createForm(deps: FormDeps): Form {
         author: resolveAuthor(options.author),
         environment: options.environment ?? 'local',
         selection: deps.selection,
+        element: picked?.element,
         context: resolved,
         consoleErrors: deps.consoleErrors(),
       });
@@ -102,6 +108,20 @@ export function createForm(deps: FormDeps): Form {
       return;
     }
     if (!unmounted()) deps.submitted();
+  };
+
+  const onPick = async (): Promise<void> => {
+    try {
+      picked = (await deps.pick()) ?? picked;
+    } catch (cause) {
+      console.warn('[field-notes] the element picker failed.', cause);
+      error = "Couldn't use the element picker.";
+    }
+    deps.redraw();
+  };
+  const onUnpick = (): void => {
+    picked = undefined;
+    deps.redraw();
   };
 
   const onInput = (event: Event): void => {
@@ -173,6 +193,30 @@ export function createForm(deps: FormDeps): Form {
       }
       <p id="field-notes-error" class="error" role="alert">${error}</p>
       <div class="actions">
+        ${
+          picked
+            ? html`<button
+                  type="button"
+                  class="link picked"
+                  title="Pick again"
+                  aria-label="Picked ${picked.label}. Pick again"
+                  ?disabled=${busy}
+                  @click=${onPick}
+                >
+                  ${picked.label}</button
+                ><button
+                  type="button"
+                  class="link"
+                  aria-label="Remove picked element"
+                  ?disabled=${busy}
+                  @click=${onUnpick}
+                >
+                  ×
+                </button>`
+            : html`<button type="button" class="link" ?disabled=${busy} @click=${onPick}>
+                Pick element
+              </button>`
+        }
         <span class="hint">${isMac() ? '⌘' : 'Ctrl'}+Enter</span>
         <button type="submit" class="primary" ?disabled=${busy}>Add note</button>
       </div>

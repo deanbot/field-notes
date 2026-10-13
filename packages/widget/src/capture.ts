@@ -1,6 +1,6 @@
 // Building a note from the form and the page. Part of the panel chunk.
 import { ulid } from '@field-notes/core/id';
-import { type Note, NoteSchema, SCHEMA_VERSION } from '@field-notes/core/note';
+import { type Note, type NoteElement, NoteSchema, SCHEMA_VERSION } from '@field-notes/core/note';
 
 /** Longest `selection` kept, in characters. */
 export const MAX_SELECTION = 2000;
@@ -118,6 +118,8 @@ export interface NoteInput {
   readonly author?: string | undefined;
   readonly environment: string;
   readonly selection?: string | undefined;
+  /** From the element picker. */
+  readonly element?: NoteElement | undefined;
   readonly context?: Record<string, unknown> | undefined;
   readonly consoleErrors?: readonly string[] | undefined;
   readonly now?: Date | undefined;
@@ -139,6 +141,7 @@ export function buildNote(input: NoteInput): Note {
     ...(input.author ? { author: input.author } : {}),
     environment: input.environment,
     ...pageMetadata(),
+    ...(input.element ? { element: input.element } : {}),
     ...(input.selection ? { selection: input.selection.slice(0, MAX_SELECTION) } : {}),
     ...(input.consoleErrors?.length ? { consoleErrors: [...input.consoleErrors] } : {}),
     ...(input.context ? { context: input.context } : {}),
