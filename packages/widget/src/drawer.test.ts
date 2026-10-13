@@ -220,6 +220,23 @@ describe('My notes', () => {
     expect((await outbox().list())[0]?.note.body).toBe('keep');
   });
 
+  it('says the edit failed when another tab delivered the note meanwhile', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mount();
+    await submit('raced');
+    await openNotes();
+    await userEvent.click(el('.entry button.link'));
+    await userEvent.type(el('#field-notes-edit'), ' late');
+    await outbox().flush(fakeTransport().transport);
+    await userEvent.click(el('.entry button.primary'));
+    await vi.waitFor(() => {
+      expect(query('.notes .error')?.textContent).toBe("Couldn't save the change.");
+    });
+    // The edit stays open, so the text isn't lost.
+    expect((el('#field-notes-edit') as HTMLTextAreaElement).value).toBe('raced late');
+    expect(warn).toHaveBeenCalled();
+  });
+
   it('cancels an edit', async () => {
     mount();
     await submit('as is');

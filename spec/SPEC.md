@@ -15,6 +15,7 @@
 - Every note has its own directory, and there is no shared index file. Writers never touch another note's directory.
 - `<id>` is the note's `id` with any character outside `A-Z a-z 0-9 _ -` replaced by `_`, and `<slug>` is a short, filesystem-safe summary of the body. Readers must not parse meaning out of the directory name. Read `note.md` instead.
 - Different notes can map to the same directory name: ids that differ only in replaced characters, or only in case on a case-insensitive filesystem. So writers **create a note's directory exclusively and never write into one that already exists**. On a clash, a writer that assigns ids picks a new one; an importer reports the note as a conflict and skips it.
+- A note's file names stay distinct when case is ignored: no two attachments that differ only in case, and none named `note.md` in any case. On a case-insensitive filesystem one would overwrite the other. Writers refuse them, and readers of an export zip reject the zip.
 - A writer adds `note.md` last, after the note's other files. A directory without `note.md` is still being written: readers skip it.
 - Other entries in `.field-notes/` (such as `.gitignore`, or the sink's own `.sink/` state) aren't notes. Readers only look in `items/`.
 - An export zip uses the same layout (`items/…`) plus a top-level `index.md` digest. Unzipping it into `.field-notes/` gives the same result as notes written by the sink.

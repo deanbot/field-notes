@@ -130,6 +130,12 @@ describe('writeBundle / readBundle', () => {
       ],
     ],
     ['an attachment named note.md', [{ note: note('a', ''), attachments: { 'note.md': png } }]],
+    // Unzipped where names ignore case, each would overwrite another file.
+    ['an attachment named NOTE.MD', [{ note: note('a', ''), attachments: { 'NOTE.MD': png } }]],
+    [
+      'attachments that differ only in case',
+      [{ note: note('a', ''), attachments: { 'a.png': png, 'A.png': png } }],
+    ],
   ])('throws on %s', (_, input) => {
     expect(() => writeBundle(input)).toThrow(TypeError);
   });
@@ -231,6 +237,22 @@ describe('readBundle rejects hostile input', () => {
     const zip = zipSync({ ...validItem(), 'items/a-note/x.png': png, 'items/a-note/y.png': png });
     const renamed = replaceAll(zip, strToU8('items/a-note/y.png'), strToU8('items/a-note/x.png'));
     expect(error(readBundle(renamed))?.code).toBe('duplicate-entry');
+  });
+
+  it('entries that differ only in case', () => {
+    const zip = zipSync({ ...validItem(), 'items/a-note/a.png': png, 'items/a-note/A.png': png });
+    expect(error(readBundle(zip))).toEqual({
+      code: 'duplicate-entry',
+      entry: 'items/a-note/A.png',
+    });
+  });
+
+  it('an attachment named like note.md in another case', () => {
+    const zip = zipSync({ ...validItem(), 'items/b-note/NOTE.MD': png });
+    expect(error(readBundle(zip))).toEqual({
+      code: 'duplicate-entry',
+      entry: 'items/b-note/NOTE.MD',
+    });
   });
 
   it('a note that fails validation', () => {

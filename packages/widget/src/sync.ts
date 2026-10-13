@@ -141,6 +141,6 @@ export function startSync(options: SyncOptions): Sync {
     },
     { signal },
   );
-  outbox.prune(DELIVERED_RETENTION_MS).catch(() => undefined);
+  outbox.prune('delivered', DELIVERED_RETENTION_MS).catch(() => undefined);
   return { kick };
 }

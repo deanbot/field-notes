@@ -78,10 +78,14 @@ export function writeBundle(
     if (dirs.has(dir.toLowerCase())) throw new TypeError(`writeBundle: duplicate note ${dir}`);
     dirs.add(dir.toLowerCase());
     files[`${prefix}${NOTE_FILE}`] = encoder.encode(serializeNote(note));
+    // Without case too: unzipped where `A.png` and `a.png` are one file, either
+    // would overwrite the other, and `NOTE.MD` the note.
+    const names = new Set([NOTE_FILE]);
     for (const [name, bytes] of Object.entries(attachments)) {
-      if (!isAttachmentName(name) || name === NOTE_FILE) {
+      if (!isAttachmentName(name) || names.has(name.toLowerCase())) {
         throw new TypeError(`writeBundle: invalid attachment name ${JSON.stringify(name)}`);
       }
+      names.add(name.toLowerCase());
       // Already-compressed formats (PNG, JPEG, WebP) don't shrink; store them as-is.
       files[`${prefix}${name}`] = [bytes, { level: 0 }];
     }
@@ -265,12 +269,15 @@ export function readBundle(bytes: Uint8Array, options: ReadBundleOptions = {}): 
   } = options;
   try {
     const entries = readEntries(bytes, maxEntries);
+    // Without case: unzipped where `A.png` and `a.png` are one file, either
+    // would overwrite the other.
     const seen = new Set<string>();
     let total = 0;
     for (const entry of entries) {
       checkPath(entry.name);
-      if (seen.has(entry.name)) throw new Reject('duplicate-entry', 'Duplicate entry', entry.name);
-      seen.add(entry.name);
+      const key = entry.name.toLowerCase();
+      if (seen.has(key)) throw new Reject('duplicate-entry', 'Duplicate entry', entry.name);
+      seen.add(key);
       if (entry.size > maxEntrySize) {
         throw new Reject('too-large', `Entry exceeds ${String(maxEntrySize)} bytes`, entry.name);
       }
@@ -290,6 +297,10 @@ export function readBundle(bytes: Uint8Array, options: ReadBundleOptions = {}): 
       const [, dir = '', file = ''] = match;
       if (file !== NOTE_FILE && !isAttachmentName(file)) {
         throw new Reject('unsafe-path', 'Attachment name not allowed', entry.name);
+      }
+      // It would be the note itself where names ignore case.
+      if (file !== NOTE_FILE && file.toLowerCase() === NOTE_FILE) {
+        throw new Reject('duplicate-entry', 'Attachment named like the note', entry.name);
       }
       const item = items.get(dir) ?? { attachments: [] };
       items.set(dir, item);
