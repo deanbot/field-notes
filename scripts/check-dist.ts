@@ -54,6 +54,9 @@ const syncFile = files.find((file) => /^sync-.*\.js$/.test(file));
 const exportFile = files.find((file) => /^export-.*\.js$/.test(file));
 const pickerFile = files.find((file) => /^picker-.*\.js$/.test(file));
 const screenshotFile = files.find((file) => /^screenshot-.*\.js$/.test(file));
+const displayFile = files.find((file) => /^display-.*\.js$/.test(file));
+// Region Capture's method: only the display capture uses it.
+const DISPLAY = 'cropTo';
 
 /** A chunk and every chunk it imports statically, as one text. */
 function withImports(file: string, seen = new Set<string>()): string {
@@ -158,8 +161,28 @@ await check(
   },
 );
 
+await check(
+  'the display capture is a lazy chunk of the stub, without modern-screenshot or anything else big',
+  () => {
+    assert(displayFile, 'no display chunk');
+    assert(lazyFromStub(displayFile), 'the stub does not lazy-load the display capture');
+    assert(!stub.includes(DISPLAY), 'the display capture is in the stub');
+    const chunk = withImports(displayFile);
+    assert(chunk.includes(DISPLAY), 'the display capture is not in its chunk');
+    for (const [name, found] of [
+      ['modern-screenshot', chunk.includes(SCREENSHOT)],
+      ['Lit', chunk.includes(LIT)],
+      ['Zod', chunk.includes(ZOD)],
+      ['yaml or fflate', YAML.test(chunk) || chunk.includes(FFLATE)],
+    ] as const) {
+      assert(!found, `${name} is in the display chunks`);
+    }
+  },
+);
+
 await check('the script-tag build has the screenshot inlined (local mode takes them too)', () => {
   assert(iife.includes(SCREENSHOT), 'modern-screenshot is not in the script-tag build');
+  assert(iife.includes(DISPLAY), 'the display capture is not in the script-tag build');
 });
 
 await check('the script-tag build has the element picker inlined (local mode picks too)', () => {
@@ -325,6 +348,10 @@ await check(
         );
       await open();
       assert(screenshotChunk(), 'opening the widget did not load the screenshot chunk');
+      assert(
+        !requested.some((path) => /\/display-[^/]*\.js$/.test(path)),
+        'the display chunk loaded for a DOM screenshot',
+      );
       await page.locator('.shot img[src^="blob:"]').waitFor();
       await page.locator('#field-notes-text').fill('Exported from a production build');
       await page.keyboard.press('Control+Enter');
