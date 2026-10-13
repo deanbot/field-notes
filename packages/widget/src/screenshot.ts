@@ -147,6 +147,7 @@ export function captureScreenshot(exclude: Element): Capture {
     // the page to load (lazy ones never do) before copying anything.
     const made = await createContext<HTMLElement>(document.createElement('div'), {
       scale,
+      debug: true,
       timeout: FETCH_TIMEOUT_MS,
       backgroundColor: pageBackground(),
       // Inner scrollers show their scrolled content. It moves the body by the

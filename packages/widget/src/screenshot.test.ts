@@ -210,6 +210,18 @@ describe('captureScreenshot', () => {
   });
 });
 
+it('DIAGNOSTIC timings', async () => {
+  for (const markup of ['<p>plain</p>', '<p>plain</p><field-notes></field-notes>']) {
+    page(markup);
+    const t = performance.now();
+    const capture = captureScreenshot(document.createElement('div'));
+    await capture.cloned;
+    const cloned = performance.now() - t;
+    await capture.image;
+    console.warn(`DIAG ${navigator.userAgent.includes('Firefox') ? 'firefox' : 'other'} cloned=${String(Math.round(cloned))} image=${String(Math.round(performance.now() - t))} fonts=${String(document.fonts.size)} sheets=${String(document.styleSheets.length)} imgs=${String(document.images.length)}`);
+  }
+});
+
 describe('encode', () => {
   function noise(width: number, height: number): HTMLCanvasElement {
     const canvas = document.createElement('canvas');
