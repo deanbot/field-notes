@@ -7,6 +7,7 @@ import type * as ConsoleModule from './console-errors.ts';
 import type * as ExportModule from './export.ts';
 import type * as PanelModule from './panel.ts';
 import type { Capture } from './image.ts';
+import type * as DisplayModule from './display.ts';
 import type * as ScreenshotModule from './screenshot.ts';
 import type * as SyncModule from './sync.ts';
 import { PENDING_KEY, readPending, writePending } from './pending.ts';
@@ -67,9 +68,13 @@ export interface FieldNotesOptions {
   /**
    * `'dom'` (default) attaches a screenshot of what's on screen, taken as the
    * widget opens (so it isn't in it) and again after a pick. Passwords and
-   * `[data-field-notes-mask]` content are painted over. `'off'` takes none.
+   * `[data-field-notes-mask]` content are painted over. `'display'` asks the
+   * browser to share this tab instead, for exact pixels: only where it can
+   * prove the share is this tab (Chromium), with `'dom'` everywhere else and
+   * after a pick. A pasted or dropped image takes the screenshot's place.
+   * `'off'` takes none, and accepts no pasted or dropped images.
    */
-  screenshot?: 'dom' | 'off' | undefined;
+  screenshot?: 'dom' | 'display' | 'off' | undefined;
   /**
    * The local sink's URL. Default `/__field-notes` on the page's origin; the
    * script tag served by `field-notes serve` defaults to that server.
@@ -139,6 +144,16 @@ export function findMount(): FieldNotesHandle | undefined {
 
 /** How long an open waits for the page to be copied before the surface covers it. */
 const CLONE_WAIT_MS = 1000;
+
+/**
+ * Whether this browser can prove a screen share is this tab (Region Capture,
+ * in Chromium), so asking for one is worth it. No `mediaDevices` outside a
+ * secure context.
+ */
+const canCaptureTab = (): boolean =>
+  'CropTarget' in window &&
+  'mediaDevices' in navigator &&
+  'getDisplayMedia' in navigator.mediaDevices;
 
 const warn = (message: string): void => {
   console.warn(`[field-notes] ${message}`);
@@ -265,9 +280,23 @@ export function mountFieldNotes(
 
   // Loaded alongside the panel on the first open, not after it.
   let camera: Promise<typeof ScreenshotModule> | undefined;
-  const shoot = async (): Promise<Capture | undefined> => {
+  let screen: Promise<typeof DisplayModule> | undefined;
+  const shoot = async (
+    display = options.screenshot === 'display',
+  ): Promise<Capture | undefined> => {
     if (options.screenshot === 'off') return undefined;
     try {
+      if (display && canCaptureTab()) {
+        const { captureDisplay } = await (screen ??= import('./display.ts'));
+        const image = await captureDisplay(el, signal);
+        if (image !== 'dom') {
+          return {
+            cloned: Promise.resolve(),
+            image: Promise.resolve(image),
+            cancel: () => undefined,
+          };
+        }
+      }
       const { captureScreenshot } = await (camera ??= import('./screenshot.ts'));
       const capture = captureScreenshot(el);
       await Promise.race([
@@ -276,7 +305,7 @@ export function mountFieldNotes(
       ]);
       return capture;
     } catch (error) {
-      camera = undefined;
+      camera = screen = undefined;
       warn(`couldn't take a screenshot. ${String(error)}`);
       return undefined;
     }
@@ -327,7 +356,8 @@ export function mountFieldNotes(
         options,
         selection,
         shot: capture,
-        shoot,
+        // After a pick, the DOM screenshot: a second prompt would surprise.
+        shoot: () => shoot(false),
         consoleErrors: () => errors?.snapshot(),
         pendingChanged: (pending: number) => {
           mirror(pending);
