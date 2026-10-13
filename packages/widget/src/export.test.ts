@@ -11,8 +11,9 @@ import {
   type FieldNotesOptions,
   mountFieldNotes as mountWithout,
 } from './mount.ts';
-import { DB_NAME, createOutbox } from './outbox.ts';
+import { createOutbox } from './outbox.ts';
 import { transportContract } from './transport.contract.ts';
+import { resetDatabase } from './test-outbox.ts';
 
 transportContract('export', () => {
   const held = createExportTransport();
@@ -27,21 +28,9 @@ const controllers: AbortController[] = [];
 let downloads: { name: string; bytes: Uint8Array }[] = [];
 let fetches: string[] = [];
 
-function deleteDatabase(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(DB_NAME);
-    request.onsuccess = () => {
-      resolve();
-    };
-    request.onerror = () => {
-      reject(request.error ?? new Error('delete failed'));
-    };
-  });
-}
-
 beforeEach(async () => {
   localStorage.clear();
-  await deleteDatabase();
+  await resetDatabase();
   downloads = [];
   fetches = [];
   // Downloads are caught at the link: the blob it points to is the zip.
