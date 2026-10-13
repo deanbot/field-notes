@@ -11,8 +11,10 @@ import { PENDING_KEY } from './pending.ts';
 let handle: FieldNotesHandle | undefined;
 const controllers: AbortController[] = [];
 
+// No screenshots: they're tested in screenshot.test.ts, and here they'd only
+// add timing to every submit.
 function mount(options: FieldNotesOptions = {}): FieldNotesHandle {
-  handle = mountFieldNotes({ enabled: true, ...options });
+  handle = mountFieldNotes({ enabled: true, screenshot: 'off', ...options });
   return handle;
 }
 
