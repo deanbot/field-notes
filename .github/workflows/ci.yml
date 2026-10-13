@@ -74,12 +74,3 @@ jobs:
       - run: pnpm exec vitest run --project browser
         env:
           BROWSERS: chromium,firefox,webkit
-      - name: DIAGNOSTIC drawer.test alone in Firefox, 15 times
-        if: always()
-        run: |
-          fails=0
-          for i in $(seq 15); do pnpm exec vitest run --project browser packages/widget/src/drawer.test.ts --reporter=verbose > run.log 2>&1 || { fails=$((fails+1)); grep -E "FAIL|AssertionError|\[diag\]" run.log | head -20; }; done
-          echo "alone: $fails of 15 failed"
-          grep -h "\[diag\]" run.log | head -5
-        env:
-          BROWSERS: firefox
