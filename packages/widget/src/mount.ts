@@ -128,10 +128,8 @@ const inactive: FieldNotesHandle = Object.freeze({
 });
 
 // Applied to the shell itself. `!important` is what lets it beat host rules
-// that match `<field-notes>` from outside, such as `* { color: red }`. It
-// beats an inline style too, so a display capture hides the widget with
-// `data-capturing` instead.
-const SHELL_CSS = `:host { all: initial !important; } :host([data-capturing]) { display: none !important; }${BUTTON_CSS}`;
+// that match `<field-notes>` from outside, such as `* { color: red }`.
+const SHELL_CSS = `:host { all: initial !important; }${BUTTON_CSS}`;
 
 /**
  * The live mount on the page, from any copy of the widget. It looks past
@@ -290,7 +288,7 @@ export function mountFieldNotes(
     try {
       if (display && canCaptureTab()) {
         const { captureDisplay } = await (screen ??= import('./display.ts'));
-        const image = await captureDisplay(el, signal);
+        const image = await captureDisplay(root, signal);
         if (image !== 'dom') {
           return {
             cloned: Promise.resolve(),

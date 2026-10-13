@@ -411,8 +411,10 @@ describe('the screenshot in the widget', () => {
     interface Share {
       readonly ask: ReturnType<typeof vi.fn>;
       readonly tracks: MediaStreamTrack[];
-      /** The widget's display each time a frame was drawn from the share. */
+      /** The widget button's display each time a frame was drawn from the share. */
       readonly hiddenAtGrab: string[];
+      /** The box of each element the share was cropped to. */
+      readonly cropped: DOMRect[];
       readonly answer: () => void;
     }
     function share(
@@ -425,9 +427,17 @@ describe('the screenshot in the widget', () => {
       } = {},
     ): Share {
       const { answer: reply = 'share', later = false, regionCapture = true, gesture = true } = how;
+      const cropped: DOMRect[] = [];
       vi.stubGlobal(
         'CropTarget',
-        regionCapture ? { fromElement: () => Promise.resolve({}) } : undefined,
+        regionCapture
+          ? {
+              fromElement: (el: Element) => {
+                cropped.push(el.getBoundingClientRect());
+                return Promise.resolve({});
+              },
+            }
+          : undefined,
       );
       const tab = fakeTab();
       const paint = tab.getContext('2d');
@@ -486,11 +496,11 @@ describe('the screenshot in the widget', () => {
         ...args: Parameters<typeof drawImage>
       ) {
         if (args[0] instanceof HTMLVideoElement) {
-          hiddenAtGrab.push(getComputedStyle(find(TAG_NAME)).display);
+          hiddenAtGrab.push(getComputedStyle(trigger()).display);
         }
         drawImage.apply(this, args);
       });
-      return { ask, tracks, hiddenAtGrab, answer: release };
+      return { ask, tracks, hiddenAtGrab, cropped, answer: release };
     }
     const trigger = (): HTMLElement => {
       const found = shadow().querySelector<HTMLElement>('.trigger');
@@ -511,7 +521,7 @@ describe('the screenshot in the widget', () => {
       "shares this tab without the widget, masked, at the DOM screenshot's scale",
       async () => {
         page(`<input type="password" value="secret" style="margin:40px">`);
-        const { ask, tracks, hiddenAtGrab } = share();
+        const { ask, tracks, hiddenAtGrab, cropped } = share();
         mount({ screenshot: 'display' });
         await userEvent.click(trigger());
         await vi.waitFor(() => {
@@ -520,7 +530,16 @@ describe('the screenshot in the widget', () => {
         expect(ask).toHaveBeenCalledOnce();
         expect(screenshotModule.captureScreenshot).not.toHaveBeenCalled();
         expect(hiddenAtGrab).toEqual(['none']);
-        expect(find(TAG_NAME).hasAttribute('data-capturing')).toBe(false);
+        expect(getComputedStyle(trigger()).display).not.toBe('none');
+        // The page's whole view, even though the page is shorter than it.
+        const { clientWidth, clientHeight } = document.documentElement;
+        expect(cropped.map(({ x, y, width, height }) => [x, y, width, height])).toEqual([
+          [0, 0, clientWidth, clientHeight],
+        ]);
+        const views = [...shadow().children].filter(
+          (el) => el instanceof HTMLElement && el.style.position === 'fixed',
+        );
+        expect(views).toEqual([]);
         expect(stopped(tracks)).toBe(true);
         const { note, attachments } = await submitted();
         expect(note.screenshot).toBe('screenshot.png');

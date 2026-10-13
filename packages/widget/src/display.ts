@@ -42,13 +42,13 @@ async function playing(stream: MediaStream): Promise<HTMLVideoElement> {
 }
 
 /**
- * Asks the user to share this tab, and takes one frame of it without
- * `exclude` (the widget). `'dom'` when that can't be done: no Region Capture,
+ * Asks the user to share this tab, and takes one frame of it without what's
+ * in `exclude` (the widget's shadow root). `'dom'` when that can't be done: no Region Capture,
  * no user gesture to ask with, or the user shared something else. Undefined
  * if the user declined, or `signal` aborted meanwhile.
  */
 export async function captureDisplay(
-  exclude: HTMLElement,
+  exclude: ShadowRoot,
   signal: AbortSignal,
 ): Promise<Screenshot | 'dom' | undefined> {
   if (!hasRegionCapture(window)) return 'dom';
@@ -67,19 +67,32 @@ export async function captureDisplay(
   } catch (error) {
     return error instanceof DOMException && error.name === 'NotAllowedError' ? undefined : 'dom';
   }
+  // The page's view, without scrollbars, whichever side they're on: what a
+  // fixed element at inset 0 covers. The crop is to it, not to <html>, which
+  // is shorter than the view on a short page.
+  const view = document.createElement('div');
+  view.style.cssText = 'position:fixed;inset:0;pointer-events:none';
+  const hidden = [...exclude.children]
+    .filter((el) => el instanceof HTMLElement)
+    .map((el) => ({
+      el,
+      value: el.style.getPropertyValue('display'),
+      priority: el.style.getPropertyPriority('display'),
+    }));
   try {
     const [track] = stream.getVideoTracks();
     if (aborted()) return undefined;
     if (!track || !croppable(track)) return 'dom';
+    exclude.append(view);
     try {
       // Rejects unless the track is this tab.
-      await track.cropTo(await window.CropTarget.fromElement(document.documentElement));
+      await track.cropTo(await window.CropTarget.fromElement(view));
     } catch {
       return 'dom';
     }
     if (aborted()) return undefined;
-    // Its own styles beat an inline one; this attribute is what they hide it on.
-    exclude.toggleAttribute('data-capturing', true);
+    // The widget's own elements; `important` beats their style sheet's.
+    for (const { el } of hidden) el.style.setProperty('display', 'none', 'important');
     const video = await playing(stream);
     // As the DOM screenshot is scaled, so `element.rect` lines up the same way.
     const { clientWidth: width, clientHeight: height } = document.documentElement;
@@ -88,7 +101,8 @@ export async function captureDisplay(
     if (aborted() || !paintMasks(canvas, maskRects(), scale)) return undefined;
     return await encode(canvas);
   } finally {
-    exclude.toggleAttribute('data-capturing', false);
+    for (const { el, value, priority } of hidden) el.style.setProperty('display', value, priority);
+    view.remove();
     for (const track of stream.getTracks()) track.stop();
   }
 }
