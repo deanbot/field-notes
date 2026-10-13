@@ -218,7 +218,10 @@ export function createOutbox(
       const stored = await toStored(attachments);
       const added = Math.max(Date.now(), lastAdded + 1);
       lastAdded = added;
-      const tx = (await db()).transaction('entries', 'readwrite');
+      const t0 = performance.now();
+      const database = await db();
+      const t1 = performance.now();
+      const tx = database.transaction('entries', 'readwrite');
       // Both at once: a failed add (a duplicate id) aborts the transaction,
       // and tx.done must not reject unheard.
       await Promise.all([
@@ -232,7 +235,10 @@ export function createOutbox(
         }),
         tx.done,
       ]);
+      const t2 = performance.now();
       await committed();
+      // eslint-disable-next-line no-console
+      console.info(`[diag] add open=${String(Math.round(t1 - t0))} tx=${String(Math.round(t2 - t1))} count=${String(Math.round(performance.now() - t2))}`);
     },
 
     list,
