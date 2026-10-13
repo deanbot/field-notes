@@ -1,6 +1,6 @@
 import type { Note } from '@field-notes/core/note';
-import { page as browser, userEvent } from 'vitest/browser';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { page as browser, server, userEvent } from 'vitest/browser';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { deliver } from './deliver.ts';
 import { TAG_NAME } from './element.ts';
 import { type FieldNotesHandle, type FieldNotesOptions, mountFieldNotes } from './mount.ts';
@@ -395,6 +395,227 @@ describe('the screenshot in the widget', () => {
     expect(cancel).toHaveBeenCalled();
     await h.open();
     expect(screenshotModule.captureScreenshot).toHaveBeenCalledTimes(2);
+  });
+
+  describe('shared as a tab', () => {
+    // A stand-in for the tab: a canvas the size of the viewport at the
+    // screenshot's scale, blue, with red where the masked field is.
+    function fakeTab(): HTMLCanvasElement {
+      const scale = Math.min(devicePixelRatio, 2);
+      const { clientWidth, clientHeight } = document.documentElement;
+      const canvas = document.createElement('canvas');
+      canvas.width = clientWidth * scale;
+      canvas.height = clientHeight * scale;
+      return canvas;
+    }
+    interface Share {
+      readonly ask: ReturnType<typeof vi.fn>;
+      readonly tracks: MediaStreamTrack[];
+      /** The widget's display each time a frame was drawn from the share. */
+      readonly hiddenAtGrab: string[];
+      readonly answer: () => void;
+    }
+    function share(
+      how: {
+        answer?: 'share' | 'deny' | 'other';
+        later?: boolean;
+        regionCapture?: boolean;
+        /** As if not opened by a click or key (an earlier test's may still count). */
+        gesture?: boolean;
+      } = {},
+    ): Share {
+      const { answer: reply = 'share', later = false, regionCapture = true, gesture = true } = how;
+      vi.stubGlobal(
+        'CropTarget',
+        regionCapture ? { fromElement: () => Promise.resolve({}) } : undefined,
+      );
+      const tab = fakeTab();
+      const paint = tab.getContext('2d');
+      const tracks: MediaStreamTrack[] = [];
+      const draw = (): void => {
+        if (!paint) return;
+        paint.fillStyle = 'rgb(0, 0, 255)';
+        paint.fillRect(0, 0, tab.width, tab.height);
+        const field = document.querySelector('input[type="password"]')?.getBoundingClientRect();
+        const scale = tab.width / document.documentElement.clientWidth;
+        paint.fillStyle = 'rgb(255, 0, 0)';
+        if (field) {
+          paint.fillRect(
+            field.x * scale,
+            field.y * scale,
+            field.width * scale,
+            field.height * scale,
+          );
+        }
+      };
+      // Some engines only send a frame once the canvas changes.
+      const timer = setInterval(draw, 16);
+      onTestFinished(() => {
+        clearInterval(timer);
+      });
+      let release: () => void = () => undefined;
+      const answered = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      if (!later) release();
+      const ask = vi.fn(async () => {
+        if (!gesture || !navigator.userActivation.isActive) {
+          throw new DOMException('needs a user gesture', 'InvalidStateError');
+        }
+        await answered;
+        if (reply === 'deny') throw new DOMException('Permission denied', 'NotAllowedError');
+        draw();
+        const stream = tab.captureStream();
+        tracks.push(...stream.getTracks());
+        for (const track of stream.getVideoTracks()) {
+          Object.assign(track, {
+            cropTo: () =>
+              reply === 'other'
+                ? Promise.reject(new DOMException('not this tab', 'NotSupportedError'))
+                : Promise.resolve(),
+          });
+        }
+        return stream;
+      });
+      vi.spyOn(navigator.mediaDevices, 'getDisplayMedia').mockImplementation(ask);
+      const hiddenAtGrab: string[] = [];
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- applied with its own this below
+      const drawImage = CanvasRenderingContext2D.prototype.drawImage;
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'drawImage').mockImplementation(function (
+        this: CanvasRenderingContext2D,
+        ...args: Parameters<typeof drawImage>
+      ) {
+        if (args[0] instanceof HTMLVideoElement) {
+          hiddenAtGrab.push(getComputedStyle(find(TAG_NAME)).display);
+        }
+        drawImage.apply(this, args);
+      });
+      return { ask, tracks, hiddenAtGrab, answer: release };
+    }
+    const trigger = (): HTMLElement => {
+      const found = shadow().querySelector<HTMLElement>('.trigger');
+      if (!found) throw new Error('no trigger');
+      return found;
+    };
+    const stopped = (tracks: MediaStreamTrack[]): boolean =>
+      tracks.length > 0 && tracks.every((track) => track.readyState === 'ended');
+    // Headless WebKit never plays a canvas stream; Safari can't prove a share
+    // is this tab anyway, so it only ever takes the DOM screenshot.
+    const plays = server.browser !== 'webkit';
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it.runIf(plays)(
+      "shares this tab without the widget, masked, at the DOM screenshot's scale",
+      async () => {
+        page(`<input type="password" value="secret" style="margin:40px">`);
+        const { ask, tracks, hiddenAtGrab } = share();
+        mount({ screenshot: 'display' });
+        await userEvent.click(trigger());
+        await vi.waitFor(() => {
+          expect(thumb()?.src).toMatch(/^blob:/);
+        });
+        expect(ask).toHaveBeenCalledOnce();
+        expect(screenshotModule.captureScreenshot).not.toHaveBeenCalled();
+        expect(hiddenAtGrab).toEqual(['none']);
+        expect(find(TAG_NAME).hasAttribute('data-capturing')).toBe(false);
+        expect(stopped(tracks)).toBe(true);
+        const { note, attachments } = await submitted();
+        expect(note.screenshot).toBe('screenshot.png');
+        const blob = attachments['screenshot.png'];
+        if (!blob) throw new Error('no screenshot attached');
+        const shot = await pixels(blob);
+        expect(shot.scale).toBe(Math.min(devicePixelRatio, 2));
+        expect(shot.at(5, 5)).toBe('0,0,255');
+        expect(shot.some(reddish)).toBe(false);
+      },
+    );
+
+    it('takes the DOM screenshot when the user shares something else', async () => {
+      page(`<p>The page</p>`);
+      const { tracks } = share({ answer: 'other' });
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(thumb()?.src).toMatch(/^blob:/);
+      });
+      expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
+      expect(stopped(tracks)).toBe(true);
+    });
+
+    it('goes without, quietly, when the user declines', async () => {
+      page(`<p>The page</p>`);
+      const warn = vi.spyOn(console, 'warn');
+      const { ask } = share({ answer: 'deny' });
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(shadow().querySelector('dialog')?.open).toBe(true);
+      });
+      expect(ask).toHaveBeenCalledOnce();
+      expect(thumb()).toBeNull();
+      expect(shadow().querySelector('.error')?.textContent).toBe('');
+      const { note } = await submitted();
+      expect(note).not.toHaveProperty('screenshot');
+      expect(screenshotModule.captureScreenshot).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("takes the DOM screenshot when it can't ask: no user gesture", async () => {
+      page(`<p>The page</p>`);
+      const { ask } = share({ gesture: false });
+      await mount({ screenshot: 'display' }).open();
+      expect(ask).toHaveBeenCalledOnce();
+      expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
+    });
+
+    it("takes the DOM screenshot without asking where it can't prove a share is this tab", async () => {
+      page(`<p>The page</p>`);
+      const { ask } = share({ regionCapture: false });
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
+      });
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('stops a share that comes after the widget unmounted', async () => {
+      page(`<p>The page</p>`);
+      const { ask, tracks, answer } = share({ later: true });
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(ask).toHaveBeenCalledOnce();
+      });
+      handle?.unmount();
+      answer();
+      await vi.waitFor(() => {
+        expect(stopped(tracks)).toBe(true);
+      });
+      expect(screenshotModule.captureScreenshot).not.toHaveBeenCalled();
+    });
+
+    it.runIf(plays)('takes the DOM screenshot after a pick, not a second share', async () => {
+      page(`<button class="buy">Buy</button>`);
+      vi.mocked(pickElement).mockResolvedValue({
+        element: { selector: '.buy', tag: 'button', rect: { x: 0, y: 0, w: 10, h: 10 } },
+        label: 'button “Buy”',
+      });
+      const { ask } = share();
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(thumb()?.src).toMatch(/^blob:/);
+      });
+      await userEvent.click(button('Pick element'));
+      await vi.waitFor(() => {
+        expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
+      });
+      expect(ask).toHaveBeenCalledOnce();
+    });
   });
 
   describe('pasted or dropped', () => {

@@ -15,7 +15,8 @@ interface RegionCapture {
 interface CroppableTrack extends MediaStreamTrack {
   cropTo: (target: object) => Promise<void>;
 }
-const hasRegionCapture = (scope: object): scope is RegionCapture => 'CropTarget' in scope;
+const hasRegionCapture = (scope: object): scope is RegionCapture =>
+  Reflect.get(scope, 'CropTarget') !== undefined;
 const croppable = (track: MediaStreamTrack): track is CroppableTrack => 'cropTo' in track;
 
 const wait = (ms: number): Promise<void> =>
@@ -66,7 +67,6 @@ export async function captureDisplay(
   } catch (error) {
     return error instanceof DOMException && error.name === 'NotAllowedError' ? undefined : 'dom';
   }
-  const visibility = exclude.style.visibility;
   try {
     const [track] = stream.getVideoTracks();
     if (aborted()) return undefined;
@@ -78,7 +78,8 @@ export async function captureDisplay(
       return 'dom';
     }
     if (aborted()) return undefined;
-    exclude.style.visibility = 'hidden';
+    // Its own styles beat an inline one; this attribute is what they hide it on.
+    exclude.toggleAttribute('data-capturing', true);
     const video = await playing(stream);
     // As the DOM screenshot is scaled, so `element.rect` lines up the same way.
     const { clientWidth: width, clientHeight: height } = document.documentElement;
@@ -87,7 +88,7 @@ export async function captureDisplay(
     if (aborted() || !paintMasks(canvas, maskRects(), scale)) return undefined;
     return await encode(canvas);
   } finally {
-    exclude.style.visibility = visibility;
+    exclude.toggleAttribute('data-capturing', false);
     for (const track of stream.getTracks()) track.stop();
   }
 }
