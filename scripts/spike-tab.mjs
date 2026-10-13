@@ -1,11 +1,7 @@
 // SPIKE (to be removed): real tab capture in CI only. Never run locally.
 const { chromium } = await import('playwright');
 if (!process.env.CI) throw new Error('CI only');
-const attempts = [
-  ['--auto-accept-this-tab-capture'],
-  ['--auto-select-tab-capture-source-by-title=Spike'],
-  ['--use-fake-ui-for-media-stream', '--auto-select-tab-capture-source-by-title=Spike'],
-];
+const attempts = [['--auto-accept-this-tab-capture']];
 for (const args of attempts) {
   console.log('launch', JSON.stringify(args));
   const browser = await chromium.launch({ channel: 'chromium', args });
@@ -27,10 +23,15 @@ for (const args of attempts) {
       const [track] = stream.getVideoTracks();
       log.push('settings=' + JSON.stringify(track.getSettings()));
       console.log('got stream');
-      await track.cropTo(await CropTarget.fromElement(document.documentElement));
+      console.log('cropping');
+      await Promise.race([track.cropTo(await CropTarget.fromElement(document.documentElement)), timeout(10000)]);
       log.push('cropTo ok');
+      console.log('cropped');
       const video = document.createElement('video'); video.muted = true; video.srcObject = stream; await video.play();
-      for (let i = 0; i < 3; i++) await new Promise((r) => video.requestVideoFrameCallback(() => r()));
+      console.log('playing');
+      document.body.style.background = 'rgb(0,0,254)';
+      for (let i = 0; i < 3; i++) await Promise.race([new Promise((r) => video.requestVideoFrameCallback(() => r())), new Promise((r) => setTimeout(r, 1000))]);
+      console.log('framed');
       log.push('frame=' + video.videoWidth + 'x' + video.videoHeight + ' client=' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight + ' inner=' + innerWidth + 'x' + innerHeight + ' dpr=' + devicePixelRatio);
       const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight;
       const g = c.getContext('2d'); g.drawImage(video, 0, 0);
