@@ -87,8 +87,3 @@ export async function fromFile(file: Blob): Promise<Screenshot | undefined> {
   bitmap.close();
   return encode(canvas, 'image');
 }
-
-/** A capture with nothing to copy: the image is already on its way. */
-export function settled(image: Promise<Screenshot | undefined>): Capture {
-  return { cloned: Promise.resolve(), image, cancel: () => undefined };
-}

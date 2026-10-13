@@ -396,4 +396,118 @@ describe('the screenshot in the widget', () => {
     await h.open();
     expect(screenshotModule.captureScreenshot).toHaveBeenCalledTimes(2);
   });
+
+  describe('pasted or dropped', () => {
+    async function imageFile(color: string, type = 'image/png'): Promise<File> {
+      const canvas = document.createElement('canvas');
+      canvas.width = 30;
+      canvas.height = 20;
+      const paint = canvas.getContext('2d');
+      if (!paint) throw new Error('no 2d context');
+      paint.fillStyle = color;
+      paint.fillRect(0, 0, 30, 20);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, type);
+      });
+      if (!blob) throw new Error('not encoded');
+      return new File([blob], `photo.${type.slice(6)}`, { type: blob.type });
+    }
+    function transfer(file: File, text?: string): DataTransfer {
+      const data = new DataTransfer();
+      data.items.add(file);
+      if (text) data.setData('text/plain', text);
+      return data;
+    }
+    const textarea = (): HTMLTextAreaElement => {
+      const found = shadow().querySelector('textarea');
+      if (!found) throw new Error('no textarea');
+      return found;
+    };
+    /** False if the widget took it (prevented the default). */
+    function paste(data: DataTransfer): boolean {
+      const event = new ClipboardEvent('paste', {
+        clipboardData: data,
+        bubbles: true,
+        cancelable: true,
+      });
+      // Firefox leaves out a clipboardData passed to the constructor.
+      if (!event.clipboardData) Object.defineProperty(event, 'clipboardData', { value: data });
+      return textarea().dispatchEvent(event);
+    }
+    function drag(type: 'dragover' | 'drop', data: DataTransfer): boolean {
+      return textarea().dispatchEvent(
+        new DragEvent(type, { dataTransfer: data, bubbles: true, cancelable: true }),
+      );
+    }
+    async function opened(options: FieldNotesOptions = {}): Promise<void> {
+      page(`<p>The page</p>`);
+      await mount(options).open();
+      if (options.screenshot !== 'off') {
+        await vi.waitFor(() => {
+          expect(thumb()?.src).toMatch(/^blob:/);
+        });
+      }
+    }
+    async function attached(): Promise<string> {
+      const before = thumb()?.src;
+      await vi.waitFor(() => {
+        expect(thumb()?.src).toMatch(/^blob:/);
+        expect(thumb()?.src).not.toBe(before);
+      });
+      return thumb()?.src ?? '';
+    }
+
+    it('takes the screenshot’s place when pasted, encoded again as image.png', async () => {
+      await opened();
+      expect(paste(transfer(await imageFile('rgb(0, 0, 255)', 'image/jpeg')))).toBe(false);
+      await attached();
+      const { note, attachments } = await submitted();
+      expect(note.screenshot).toBe('image.png');
+      expect(Object.keys(attachments)).toEqual(['image.png']);
+      const blob = attachments['image.png'];
+      if (!blob) throw new Error('no image attached');
+      const bitmap = await createImageBitmap(blob);
+      expect([bitmap.width, bitmap.height]).toEqual([30, 20]);
+    });
+
+    it('leaves a paste that has text too to the textarea', async () => {
+      await opened();
+      expect(paste(transfer(await imageFile('blue'), 'Some text'))).toBe(true);
+      const { note } = await submitted();
+      expect(note.screenshot).toBe('screenshot.png');
+    });
+
+    it('takes a dropped image, and ignores a dropped file that isn’t one', async () => {
+      await opened();
+      const text = transfer(new File(['hello'], 'notes.txt', { type: 'text/plain' }));
+      expect(drag('dragover', text)).toBe(false);
+      expect(drag('drop', text)).toBe(false);
+      const image = transfer(await imageFile('green'));
+      expect(drag('dragover', image)).toBe(false);
+      expect(drag('drop', image)).toBe(false);
+      await attached();
+      const { note } = await submitted();
+      expect(note.screenshot).toBe('image.png');
+    });
+
+    it("says so, and keeps the screenshot, when the image can't be read", async () => {
+      await opened();
+      paste(transfer(new File(['not a png'], 'broken.png', { type: 'image/png' })));
+      await vi.waitFor(() => {
+        expect(shadow().querySelector('.error')?.textContent).toBe("Couldn't use that image.");
+      });
+      const { note } = await submitted();
+      expect(note.screenshot).toBe('screenshot.png');
+    });
+
+    it("takes none when screenshots are off, and doesn't stand in the way", async () => {
+      await opened({ screenshot: 'off' });
+      const image = transfer(await imageFile('blue'));
+      expect(paste(image)).toBe(true);
+      expect(drag('dragover', image)).toBe(true);
+      expect(thumb()).toBeNull();
+      const { note } = await submitted();
+      expect(note).not.toHaveProperty('screenshot');
+    });
+  });
 });
