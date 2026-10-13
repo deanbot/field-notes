@@ -6,7 +6,7 @@ import { type FieldNotesHandle, type FieldNotesOptions, mountFieldNotes } from '
 let handle: FieldNotesHandle | undefined;
 
 function mount(options: FieldNotesOptions = {}): FieldNotesHandle {
-  handle = mountFieldNotes({ enabled: true, ...options });
+  handle = mountFieldNotes({ enabled: true, screenshot: 'off', ...options });
   return handle;
 }
 

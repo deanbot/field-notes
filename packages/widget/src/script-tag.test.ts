@@ -51,7 +51,7 @@ describe('scriptOptions', () => {
 
 describe('startScriptTag', () => {
   it('mounts at once when the document has loaded', async () => {
-    api = startScriptTag(tag());
+    api = startScriptTag(tag({ screenshot: 'off' }));
     expect(document.querySelectorAll(TAG_NAME)).toHaveLength(1);
     await api.open();
     expect(document.querySelector(TAG_NAME)?.shadowRoot?.querySelector('h2')).not.toBeNull();
@@ -106,7 +106,7 @@ describe('startScriptTag', () => {
 
   it("leaves the app's own mount alone when it reused it", () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const app = mountFieldNotes({ enabled: true });
+    const app = mountFieldNotes({ enabled: true, screenshot: 'off' });
     const el = document.querySelector(TAG_NAME);
     api = startScriptTag(tag());
     api.unmount();

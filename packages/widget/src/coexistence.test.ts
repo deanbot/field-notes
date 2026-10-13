@@ -22,7 +22,7 @@ function shadow(): ShadowRoot {
 
 it('adds no globals beyond the ones Lit and Zod share across copies', async () => {
   const before = new Set(Object.getOwnPropertyNames(globalThis));
-  handle = mountFieldNotes({ enabled: true });
+  handle = mountFieldNotes({ enabled: true, screenshot: 'off' });
   await handle.open();
   handle.unmount();
   const added = Object.getOwnPropertyNames(globalThis).filter((name) => !before.has(name));
@@ -42,7 +42,7 @@ it('runs beside a host on a different Lit version', async () => {
   document.body.append(host);
   await host.updateComplete;
 
-  handle = mountFieldNotes({ enabled: true });
+  handle = mountFieldNotes({ enabled: true, screenshot: 'off' });
   await handle.open();
 
   expect(host.shadowRoot?.textContent).toContain('host on lit 2');
@@ -63,7 +63,7 @@ it('keeps hostile host CSS out of the shadow root', async () => {
   `;
   document.head.append(style);
 
-  handle = mountFieldNotes({ enabled: true });
+  handle = mountFieldNotes({ enabled: true, screenshot: 'off' });
   await handle.open();
   const heading = shadow().querySelector('h2');
   if (!heading) throw new Error('no heading');

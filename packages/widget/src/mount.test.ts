@@ -5,8 +5,8 @@ import type * as MountModule from './mount.ts';
 
 const mounts: FieldNotesHandle[] = [];
 
-function mount(...args: Parameters<typeof mountFieldNotes>): FieldNotesHandle {
-  const handle = mountFieldNotes(...args);
+function mount(...[options, ...rest]: Parameters<typeof mountFieldNotes>): FieldNotesHandle {
+  const handle = mountFieldNotes({ screenshot: 'off', ...options }, ...rest);
   mounts.push(handle);
   return handle;
 }
