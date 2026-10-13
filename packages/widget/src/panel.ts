@@ -8,14 +8,17 @@ import { type Exporting, createDrawer } from './drawer.ts';
 import { type FormDeps, createForm, resolveTypes } from './form.ts';
 import type { LoadExport } from './mount.ts';
 import { type Outbox, createOutbox } from './outbox.ts';
+import type { Capture } from './screenshot.ts';
 
 /** The layout the panel opens in. All of them share one form. */
 export type Surface = 'popover' | 'sheet' | 'side';
 
 export interface PanelView extends Pick<
   FormDeps,
-  'options' | 'selection' | 'consoleErrors' | 'signal'
+  'options' | 'selection' | 'consoleErrors' | 'signal' | 'shot'
 > {
+  /** Takes a screenshot (when they're on) and resolves once the page is copied. */
+  readonly shoot: () => Promise<Capture | undefined>;
   /** Hears the outbox's pending count: the stub mirrors it and updates the badge. */
   readonly pendingChanged: (pending: number) => void;
   readonly surface: Surface;
@@ -161,6 +164,18 @@ header .link { margin-left: auto; }
 .actions > :first-child { margin-left: -6px; }
 .actions .hint { margin-left: auto; }
 .picked { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot { display: flex; align-items: center; }
+.shot img {
+  display: block;
+  width: 40px;
+  height: 28px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--_border);
+  border-radius: 4px;
+  background: var(--_border);
+  color: transparent;
+}
 select { font: inherit; color: inherit; background: var(--_bg); border: 1px solid var(--_border); border-radius: 6px; padding: 4px; }
 .toast {
   --_bg: var(--field-notes-bg, light-dark(#fff, #1e1e1e));
@@ -349,6 +364,7 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   target.dispose = () => {
     disposed = true;
     picking?.abort();
+    form.release();
   };
   const redraw = (): void => {
     if (!disposed) draw();
@@ -380,8 +396,9 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
     root.getElementById('field-notes-mode')?.focus();
   };
   // The page behind a modal dialog is inert, so the dialog closes while the
-  // user picks, and the same form comes back with its text.
-  const pick: FormDeps['pick'] = async () => {
+  // user picks, and the same form comes back with its text. A screenshot is
+  // taken again before it does: the picked element's rect is in this view.
+  const pick: FormDeps['pick'] = async (retake) => {
     const dialog = target.surface.querySelector('dialog');
     if (picking || !dialog) return undefined;
     const controller = new AbortController();
@@ -393,7 +410,14 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
       if (closed()) return undefined;
       dialog.close();
       try {
-        return await pickElement(root, controller.signal);
+        const picked = await pickElement(root, controller.signal);
+        if (!picked || closed()) return undefined;
+        const shot = retake ? await view.shoot() : undefined;
+        if (closed()) {
+          shot?.cancel();
+          return undefined;
+        }
+        return { picked, shot };
       } finally {
         if (!closed()) {
           dialog.showModal();
@@ -413,7 +437,7 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   const form = createForm({
     ...view,
     pick,
-    deliver: (note) => deliver(note, target.outbox),
+    deliver: (note, attachments) => deliver(note, target.outbox, attachments),
     redraw,
     focusText: () => {
       root.getElementById('field-notes-text')?.focus();

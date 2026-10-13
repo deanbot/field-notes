@@ -15,7 +15,8 @@
     "@field-notes/core": "workspace:*",
     "@medv/finder": "4.0.2",
     "idb": "8.0.4",
-    "lit": "3.3.3"
+    "lit": "3.3.3",
+    "modern-screenshot": "4.7.0"
   },
   "devDependencies": {
     "axe-core": "4.14.0",

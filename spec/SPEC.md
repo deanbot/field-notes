@@ -75,7 +75,7 @@ Required: `id`, `schema`, `status`, `created` and, in the JSON shape, `body`. Ev
 | `tags`          | string[]                  | Free-form labels.                                                                                                      |
 | `resolution`    | string \| null            | Why the note was resolved or declined.                                                                                 |
 
-`element.rect` is in CSS pixels, relative to the viewport when the element was picked.
+`element.rect` is in CSS pixels, relative to the viewport when the element was picked. The widget's own screenshot (`screenshot.png`, or `screenshot.webp` when large) shows that viewport from its top-left corner, without scrollbars, so `element.rect` lines up with it once scaled by the image's height over `viewport.height`.
 
 Nothing in the format is tied to a role, team or workflow. Put workflow-specific data in `type`, `tags`, `context` or extra fields.
 

@@ -23,6 +23,7 @@ const ZOD = '_zod';
 const YAML = /YAMLParseError|yaml-1\.1/;
 const FFLATE = 'invalid zip data';
 const FINDER = 'Selector was not found';
+const SCREENSHOT = '______background-clip--text';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -52,6 +53,7 @@ const panelFile = files.find((file) => /^panel-.*\.js$/.test(file));
 const syncFile = files.find((file) => /^sync-.*\.js$/.test(file));
 const exportFile = files.find((file) => /^export-.*\.js$/.test(file));
 const pickerFile = files.find((file) => /^picker-.*\.js$/.test(file));
+const screenshotFile = files.find((file) => /^screenshot-.*\.js$/.test(file));
 
 /** A chunk and every chunk it imports statically, as one text. */
 function withImports(file: string, seen = new Set<string>()): string {
@@ -133,6 +135,32 @@ await check(
     }
   },
 );
+
+await check(
+  'the screenshot is a lazy chunk of the stub (loaded with the panel), with modern-screenshot and nothing else big',
+  () => {
+    assert(screenshotFile && panelFile, 'no screenshot or panel chunk');
+    assert(lazyFromStub(screenshotFile), 'the stub does not lazy-load the screenshot');
+    assert(!stub.includes(SCREENSHOT), 'modern-screenshot is in the stub');
+    assert(
+      !withImports(panelFile).includes(SCREENSHOT),
+      'modern-screenshot is in the panel chunks',
+    );
+    const chunk = withImports(screenshotFile);
+    assert(chunk.includes(SCREENSHOT), 'modern-screenshot is not in the screenshot chunk');
+    for (const [name, found] of [
+      ['Lit', chunk.includes(LIT)],
+      ['Zod', chunk.includes(ZOD)],
+      ['yaml or fflate', YAML.test(chunk) || chunk.includes(FFLATE)],
+    ] as const) {
+      assert(!found, `${name} is in the screenshot chunks`);
+    }
+  },
+);
+
+await check('the script-tag build has the screenshot inlined (local mode takes them too)', () => {
+  assert(iife.includes(SCREENSHOT), 'modern-screenshot is not in the script-tag build');
+});
 
 await check('the script-tag build has the element picker inlined (local mode picks too)', () => {
   assert(iife.includes(FINDER), 'finder is not in the script-tag build');
@@ -287,12 +315,17 @@ await check(
       page.on('pageerror', (error) => errors.push(error.message));
       await page.goto(`${origin}/`);
       await page.waitForFunction(() => 'fieldNotes' in window);
+      const screenshotChunk = (): boolean =>
+        requested.some((path) => /\/screenshot-[^/]*\.js$/.test(path));
+      assert(!screenshotChunk(), 'the screenshot chunk loaded before the widget opened');
 
       const open = (): Promise<void> =>
         page.evaluate(() =>
           (window as { fieldNotes?: { open(): Promise<void> } }).fieldNotes?.open(),
         );
       await open();
+      assert(screenshotChunk(), 'opening the widget did not load the screenshot chunk');
+      await page.locator('.shot img[src^="blob:"]').waitFor();
       await page.locator('#field-notes-text').fill('Exported from a production build');
       await page.keyboard.press('Control+Enter');
       await page.locator('dialog').waitFor({ state: 'detached' });
@@ -314,6 +347,11 @@ await check(
       assert(
         read.value.length === 1 && read.value[0]?.note.body === 'Exported from a production build',
         'the zip does not hold the note',
+      );
+      const item = read.value.at(0);
+      assert(
+        item?.note.screenshot === 'screenshot.png' && 'screenshot.png' in item.attachments,
+        'the zip has no screenshot for the note',
       );
       assert(new TextDecoder().decode(zip).includes('index.md'), 'the zip has no index.md');
 
@@ -338,6 +376,7 @@ await check(
           ),
           'the imported note is not the exported one',
         );
+        assert(existsSync(join(items, dir, 'screenshot.png')), 'import wrote no screenshot');
         const again = importIt();
         assert(
           again.status === 0 && String(again.stdout).includes('1 note already there'),

@@ -1,13 +1,18 @@
 // The capture form: one per open, shared by every surface. Part of the panel
 // chunk. State and submit logic live here; the template is a thin view of it.
 import type { Note } from '@field-notes/core/note';
-import { html, type TemplateResult } from 'lit/html.js';
+import { html, nothing, type TemplateResult } from 'lit/html.js';
 import { awaitContext, buildNote, resolveAuthor, startContext } from './capture.ts';
 import { clearDraft, loadDraft, restoreDraft, saveDraft } from './drafts.ts';
 import type { FieldNotesOptions } from './mount.ts';
 import type { Picked } from './picker.ts';
+import type { Capture, Screenshot } from './screenshot.ts';
+import type { Attachments } from './transport.ts';
 
 const DEFAULT_TYPES: readonly string[] = ['bug', 'change', 'idea', 'question'];
+
+/** How long a submit waits for a screenshot still being drawn before going without it. */
+const SHOT_WAIT_MS = 10_000;
 
 /** The note types on offer: `types`, or the defaults, without blanks. */
 export function resolveTypes(options: FieldNotesOptions): string[] {
@@ -21,10 +26,17 @@ export interface FormDeps {
   /** The page's selection when the widget opened. */
   readonly selection: string | undefined;
   readonly consoleErrors: () => readonly string[] | undefined;
-  /** Collapses the panel for the element picker; undefined if cancelled. */
-  readonly pick: () => Promise<Picked | undefined>;
+  /** The screenshot taken as the panel opened. */
+  readonly shot?: Capture | undefined;
+  /**
+   * Collapses the panel for the element picker; undefined if cancelled. With
+   * `retake`, a new screenshot is taken before the panel comes back.
+   */
+  readonly pick: (
+    retake: boolean,
+  ) => Promise<{ picked: Picked; shot?: Capture | undefined } | undefined>;
   /** Hands the note on. Resolves once it's safely stored; rejects if not. */
-  readonly deliver: (note: Note) => Promise<void>;
+  readonly deliver: (note: Note, attachments: Attachments) => Promise<void>;
   /** Aborted on unmount. */
   readonly signal: AbortSignal;
   /** Re-renders the panel after a state change. */
@@ -39,6 +51,30 @@ export interface Form {
   readonly submit: () => Promise<void>;
   /** Ctrl/Cmd+Enter submits. Bound on the dialog: WebKit leaves focus there after a chip click. */
   readonly keydown: (event: KeyboardEvent) => void;
+  /** The panel closed: drop the screenshot, unless a submit is using it. */
+  readonly release: () => void;
+}
+
+/** The screenshot, or undefined if it isn't ready in `ms` or the widget unmounts first. */
+function awaitShot(
+  shot: Capture,
+  signal: AbortSignal,
+  ms: number = SHOT_WAIT_MS,
+): Promise<Screenshot | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      console.warn("[field-notes] the screenshot wasn't ready in time; the note goes without it.");
+      resolve(undefined);
+    }, ms);
+    const done = (image: Screenshot | undefined): void => {
+      clearTimeout(timer);
+      resolve(image);
+    };
+    signal.addEventListener('abort', () => {
+      done(undefined);
+    });
+    void shot.image.then(done);
+  });
 }
 
 const isMac = (): boolean => /Mac|iPhone|iPad/.test(navigator.userAgent);
@@ -51,6 +87,10 @@ export function createForm(deps: FormDeps): Form {
   let type = draft?.type && types.includes(draft.type) ? draft.type : undefined;
   // Not kept in the draft: after a reload the element may be gone.
   let picked: Picked | undefined;
+  // Not kept either: the page will have changed.
+  let shot: Capture | undefined;
+  /** The screenshot's object URL, once it's drawn. */
+  let thumb: string | undefined;
   let error = '';
   let busy = false;
   // Called now, so a slow callback has the whole time the form is open; the
@@ -60,6 +100,20 @@ export function createForm(deps: FormDeps): Form {
   // A function, not a property read: TypeScript would narrow the property
   // across awaits, but unmount can happen during any of them.
   const unmounted = (): boolean => deps.signal.aborted;
+
+  const useShot = (next: Capture | undefined): void => {
+    shot?.cancel();
+    if (thumb) URL.revokeObjectURL(thumb);
+    thumb = undefined;
+    shot = next;
+    void next?.image.then((image) => {
+      if (shot !== next || unmounted()) return;
+      if (image) thumb = URL.createObjectURL(image.blob);
+      else shot = undefined;
+      deps.redraw();
+    });
+  };
+  useShot(deps.shot);
 
   const save = (): void => {
     saveDraft({ text, type });
@@ -82,7 +136,10 @@ export function createForm(deps: FormDeps): Form {
     busy = true;
     error = '';
     deps.redraw();
-    const resolved = await awaitContext(context, deps.signal);
+    const [resolved, image] = await Promise.all([
+      awaitContext(context, deps.signal),
+      shot && awaitShot(shot, deps.signal),
+    ]);
     if (unmounted()) {
       restoreDraft(sent);
       return;
@@ -95,10 +152,12 @@ export function createForm(deps: FormDeps): Form {
         environment: options.environment ?? 'local',
         selection: deps.selection,
         element: picked?.element,
+        screenshot: image?.name,
         context: resolved,
         consoleErrors: deps.consoleErrors(),
       });
-      await deps.deliver(note);
+      await deps.deliver(note, image ? { [image.name]: image.blob } : {});
+      useShot(undefined);
     } catch (cause) {
       console.warn('[field-notes] the note was not added; its text is back in the draft.', cause);
       restoreDraft(sent);
@@ -112,7 +171,11 @@ export function createForm(deps: FormDeps): Form {
 
   const onPick = async (): Promise<void> => {
     try {
-      picked = (await deps.pick()) ?? picked;
+      const result = await deps.pick(shot !== undefined);
+      if (result) {
+        picked = result.picked;
+        if (result.shot) useShot(result.shot);
+      }
     } catch (cause) {
       console.warn('[field-notes] the element picker failed.', cause);
       error = "Couldn't use the element picker.";
@@ -121,6 +184,10 @@ export function createForm(deps: FormDeps): Form {
   };
   const onUnpick = (): void => {
     picked = undefined;
+    deps.redraw();
+  };
+  const onUnshot = (): void => {
+    useShot(undefined);
     deps.redraw();
   };
 
@@ -217,10 +284,35 @@ export function createForm(deps: FormDeps): Form {
                 Pick element
               </button>`
         }
+        ${
+          shot
+            ? html`<span class="shot"
+                ><img
+                  src=${thumb ?? nothing}
+                  alt=${thumb ? 'Screenshot' : 'Taking screenshot…'}
+                /><button
+                  type="button"
+                  class="link"
+                  aria-label="Remove screenshot"
+                  ?disabled=${busy}
+                  @click=${onUnshot}
+                >
+                  ×
+                </button></span
+              >`
+            : ''
+        }
         <span class="hint">${isMac() ? '⌘' : 'Ctrl'}+Enter</span>
         <button type="submit" class="primary" ?disabled=${busy}>Add note</button>
       </div>
     </form>`;
 
-  return { template, submit, keydown: onKeydown };
+  return {
+    template,
+    submit,
+    keydown: onKeydown,
+    release: () => {
+      if (!busy) useShot(undefined);
+    },
+  };
 }
