@@ -86,7 +86,7 @@ export async function captureDisplay(
     exclude.append(view);
     try {
       // Rejects unless the track is this tab.
-      await track.cropTo(await window.CropTarget.fromElement(view));
+      await track.cropTo(await window.CropTarget.fromElement(document.documentElement));
     } catch {
       return 'dom';
     }
