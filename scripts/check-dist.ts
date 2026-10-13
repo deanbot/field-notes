@@ -4,7 +4,7 @@
 // widget, and that the script-tag and npm builds share a page in a browser.
 // (The DOM types are for the callbacks that run in that page.)
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -26,6 +26,15 @@ const FFLATE = 'invalid zip data';
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+
+/**
+ * The note directories in `items` that are finished: the sink writes
+ * `note.md` last, so a directory without it is still being written.
+ */
+const finishedNotes = (items: string): string[] =>
+  existsSync(items)
+    ? readdirSync(items).filter((dir) => existsSync(join(items, dir, 'note.md')))
+    : [];
 
 async function check(name: string, fn: () => void | Promise<void>): Promise<void> {
   try {
@@ -420,7 +429,7 @@ await check('a script tag from the built `serve` captures a note to disk', async
     let stored: string[] = [];
     for (let i = 0; i < 100 && stored.length === 0; i++) {
       await new Promise((done) => setTimeout(done, 100));
-      stored = readdirSync(items);
+      stored = finishedNotes(items);
     }
     assert(stored.length === 1, `expected one note on disk, found ${String(stored.length)}`);
     const note = readFileSync(join(items, stored[0] ?? '', 'note.md'), 'utf8');
@@ -474,7 +483,7 @@ await check(
       let stored: string[] = [];
       for (let i = 0; i < 100 && stored.length === 0; i++) {
         await new Promise((done) => setTimeout(done, 100));
-        stored = readdirSync(items);
+        stored = finishedNotes(items);
       }
       assert(
         stored.length === 1,
