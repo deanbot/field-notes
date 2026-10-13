@@ -13,7 +13,10 @@ import type { Surface } from './panel.ts';
 export type Trigger = 'button' | 'hotkey';
 
 export interface FieldNotesOptions {
-  /** When the widget is on. Default `'auto'`: dev builds only. */
+  /**
+   * When the widget is on. Default `'auto'`: dev builds only. `'query'`: in any
+   * build, once this browser has opened a page with `?field-notes=1`.
+   */
   enabled?: Enabled | undefined;
   /** Default `['button', 'hotkey']`. An empty list leaves only the API. */
   trigger?: readonly Trigger[] | undefined;
