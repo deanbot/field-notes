@@ -74,12 +74,10 @@ jobs:
       - run: pnpm exec vitest run --project browser
         env:
           BROWSERS: chromium,firefox,webkit
-      - name: DIAGNOSTIC drawer.test alone in Firefox, 15 times
+      - name: DIAGNOSTIC the whole browser run, 3 more times
         if: always()
         run: |
-          fails=0
-          for i in $(seq 15); do pnpm exec vitest run --project browser packages/widget/src/drawer.test.ts --reporter=verbose > run.log 2>&1 || { fails=$((fails+1)); grep -E "FAIL|AssertionError|\[diag\]" run.log | head -20; }; done
-          echo "alone: $fails of 15 failed"
-          grep -h "\[diag\]" run.log | head -5
+          for i in 1 2 3; do pnpm exec vitest run --project browser > run$i.log 2>&1 && echo "run $i ok" || { echo "run $i failed"; grep -E " FAIL |Error:" run$i.log | sort -u | head -10; grep -A3 "std[a-z]* | packages/widget/src/drawer.test.ts > submitting" run$i.log | head -60; }; done
+          for i in 1 2 3; do echo "== run $i"; grep -E "\[diag\] add (start|opened)" run$i.log | awk '{print $3, $4}' | sort | uniq -c | sort -rn | head -3; grep -oE "opened [0-9]{3,}ms" run$i.log | sort | uniq -c; done
         env:
-          BROWSERS: firefox
+          BROWSERS: chromium,firefox,webkit
