@@ -138,7 +138,6 @@ export function createForm(deps: FormDeps): Form {
     busy = true;
     error = '';
     deps.redraw();
-    const t0 = performance.now();
     const [resolved, image] = await Promise.all([
       awaitContext(context, deps.signal),
       shot && awaitShot(shot, deps.signal),
@@ -159,9 +158,7 @@ export function createForm(deps: FormDeps): Form {
         context: resolved,
         consoleErrors: deps.consoleErrors(),
       });
-      const t1 = performance.now();
       await deps.deliver(note, image ? { [image.name]: image.blob } : {});
-      console.warn(`DIAG submit waits=${String(Math.round(t1 - t0))} deliver=${String(Math.round(performance.now() - t1))} bytes=${String(image?.blob.size)}`);
       useShot(undefined);
     } catch (cause) {
       console.warn('[field-notes] the note was not added; its text is back in the draft.', cause);

@@ -74,15 +74,10 @@ const summaries = (): string[] =>
 async function submit(text: string): Promise<void> {
   await handle?.open();
   await userEvent.type(textarea(), text);
-  const t = performance.now();
   await userEvent.keyboard('{Control>}{Enter}{/Control}');
-  await vi.waitFor(
-    () => {
-      expect(query('dialog')).toBeNull();
-    },
-    { timeout: 15000 },
-  );
-  console.warn(`DIAG closed after ${String(Math.round(performance.now() - t))}`);
+  await vi.waitFor(() => {
+    expect(query('dialog')).toBeNull();
+  });
 }
 
 async function openNotes(): Promise<void> {
