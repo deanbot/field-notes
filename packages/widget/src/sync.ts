@@ -98,12 +98,15 @@ export function startSync(options: SyncOptions): Sync {
       do {
         again = false;
         const send = await sender();
+        // A kick meanwhile (back online, say) goes round again, not into the backoff.
         if (send === UNREACHABLE) {
+          if (sendAgain()) continue;
           if (!signal.aborted) retryLater();
           return;
         }
         if (!send) return;
         if ((await outbox.flush(send)).stopped) {
+          if (sendAgain()) continue;
           retryLater();
           return;
         }

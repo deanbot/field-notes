@@ -4,28 +4,18 @@ import { userEvent } from 'vitest/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TAG_NAME } from './element.ts';
 import { type FieldNotesHandle, type FieldNotesOptions, mountFieldNotes } from './mount.ts';
-import { DB_NAME, createOutbox } from './outbox.ts';
+import { createOutbox } from './outbox.ts';
 import { startScriptTag } from './script-tag.ts';
+import { RETRY_MIN_MS } from './sync.ts';
 import { resetSink, sinkNotes, startSink, stopSink } from './test-sink.ts';
+import { resetDatabase } from './test-outbox.ts';
 
 let handle: FieldNotesHandle | undefined;
 const controllers: AbortController[] = [];
 
-function deleteDatabase(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(DB_NAME);
-    request.onsuccess = () => {
-      resolve();
-    };
-    request.onerror = () => {
-      reject(request.error ?? new Error('delete failed'));
-    };
-  });
-}
-
 beforeEach(async () => {
   localStorage.clear();
-  await deleteDatabase();
+  await resetDatabase();
 });
 
 afterEach(async () => {
@@ -152,6 +142,30 @@ describe('delivery', () => {
     await vi.waitFor(() => {
       expect(mode()).toBe('My notes');
     });
+  });
+
+  it('sends at once when the network comes back during a failing send', async () => {
+    await mount({ trigger: ['hotkey'] });
+    let fail: (error: Error) => void = () => undefined;
+    const send = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          fail = reject;
+        }),
+    );
+    await submit('back online');
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalled();
+    });
+    dispatchEvent(new Event('online'));
+    fail(new TypeError('NetworkError when attempting to fetch resource.'));
+    // Well inside the backoff the lost kick used to wait for.
+    await vi.waitFor(
+      async () => {
+        expect(await bodies()).toEqual(['back online']);
+      },
+      { timeout: RETRY_MIN_MS / 2 },
+    );
   });
 
   it('sends notes left from an earlier visit at mount', async () => {
