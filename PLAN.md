@@ -161,8 +161,13 @@ A **"My notes" drawer** lists this session's notes, so the author can review, ed
   - **Encoding:** PNG, or WebP when the PNG is over 1 MB and the browser can encode WebP (`screenshot.webp`). An image still over 8 MB is halved, up to twice, to stay well under the sink's 16 MiB request limit.
   - **In the form:** a thumbnail with a remove button. A screenshot isn't kept in the draft, because after a reload the page has changed.
   - **Documented limits:** iframes (same-origin ones too, so nothing in them escapes masking), cross-origin images, tainted canvases and videos come out blank, and some CSS isn't reproduced. Open shadow roots are copied as they render. A strict CSP can give a blank shot, quirks-mode pages may be shifted, and top-layer fidelity isn't tested yet (#59). The copy's cost is tracked in #58.
-- **`display`:** `getDisplayMedia` gives pixel-perfect output but shows a browser permission prompt each time.
-- **Paste or drop** an image into the panel.
+- **`display`:** the browser asks the user to share, and the widget keeps one frame of this tab, for exact pixels. It's opt-in, and it prompts on every open.
+  - **Only this tab:** a share is kept only when Region Capture (`CropTarget`, `cropTo`) proves it's this tab. That's in Chromium only. Elsewhere, and when the user shares a window or screen, the DOM screenshot is taken instead (no prompt where it can't prove anything). A window or a screen can show other apps, and masking can't reach them.
+  - **What it shows:** the frame is cropped to the page, scaled like the DOM screenshot (so `element.rect` lines up the same way) and masked the same way. The widget is hidden while it's grabbed. The share stops at once, and also if it arrives after the widget closed or unmounted.
+  - **Can't ask, or declined:** no user gesture (`open()` from code) takes the DOM screenshot. Declining takes none, without an error.
+  - **After a pick:** the DOM screenshot, not a second prompt.
+- **Paste or drop** an image into the form, in place of the screenshot. It's decoded and encoded again as `image.png` (or `.webp`), so no metadata such as a photo's location survives. A file over 32 MB isn't read, and an image is scaled to fit 4096 px. A paste that has text too (an office app's) stays a text paste. Listeners are on the form only.
+- **`off`** takes no screenshot and accepts no pasted or dropped image.
 - **Privacy:** passwords and `[data-field-notes-mask]` are masked, including in open shadow roots, in two layers. In the copy, a masked element loses its text, value, children, background image and pseudo-elements. On the image, its box, and any content overflowing it, is painted over. The paint is what guarantees the masking. A pixel test covers each case, and it fails if either layer is removed.
 
 ### Resilience
@@ -300,15 +305,15 @@ The widget is a guest in someone else's page. It must not collide with the host'
 
 **Weight (enforced by size-limit in CI):**
 
-| what                                                          | when it loads               | budget (minified, gz)                 |
-| ------------------------------------------------------------- | --------------------------- | ------------------------------------- |
-| activation stub: trigger listeners, `open()` API, badge count | at mount                    | **< 3.75 KB**, with no Lit and no Zod |
-| panel: Lit + views + form + `zod/mini`                        | first time the widget opens | < 21 KB                               |
-| element picker (`@medv/finder`)                               | first **Pick element**      | < 4.25 KB                             |
-| screenshot (`modern-screenshot`)                              | first open, with the panel  | < 10 KB                               |
-| zip (`fflate`, the note writer)                               | first export                | < 32 KB                               |
+| what                                                          | when it loads               | budget (minified, gz)              |
+| ------------------------------------------------------------- | --------------------------- | ---------------------------------- |
+| activation stub: trigger listeners, `open()` API, badge count | at mount                    | **< 4 KB**, with no Lit and no Zod |
+| panel: Lit + views + form + `zod/mini`                        | first time the widget opens | < 21 KB                            |
+| element picker (`@medv/finder`)                               | first **Pick element**      | < 4.25 KB                          |
+| screenshot (`modern-screenshot`)                              | first open, with the panel  | < 10 KB                            |
+| zip (`fflate`, the note writer)                               | first export                | < 32 KB                            |
 
-Until someone opens it, the host pays about 3.7 KB, a keydown listener and a `storage` listener (for the badge). It does no work at mount beyond one synchronous `localStorage` read of the pending count: no IndexedDB, no DOM observers and no polling. Production builds that don't activate it tree-shake it away entirely.
+Until someone opens it, the host pays about 3.9 KB, a keydown listener and a `storage` listener (for the badge). It does no work at mount beyond one synchronous `localStorage` read of the pending count: no IndexedDB, no DOM observers and no polling. Production builds that don't activate it tree-shake it away entirely.
 
 **No collisions:**
 
@@ -377,7 +382,7 @@ Publish one package, `field-notes`, with subpath exports (`.`, `./sink`, `./vite
 | contract    | Vitest                                                                      | every writer validates against the schema; the sink and an export zip produce equivalent trees for the same note; old-schema fixtures still parse                                                                                                                                                                                                                          |
 | docs        | script                                                                      | every command in the README/recipes exists                                                                                                                                                                                                                                                                                                                                 |
 | e2e         | Playwright (Chromium, Firefox, WebKit)                                      | `vite-vue`, `next` and the script-tag fixture: capture → pick → screenshot → submit → note lands on disk; sink down → queued → flushed; widget absent from the production build. `vite-vue` export build: `?field-notes=1` → log 3 notes → badge 3 → export → badge 0 → zip downloaded → `import` → 3 valid notes on disk                                                  |
-| bundle      | size-limit                                                                  | activation stub < 3.75 KB gz (asserted to contain no Lit/Zod); panel < 21 KB gz; picker < 4.25 KB gz; screenshot < 10 KB gz; delivery < 12 KB gz; export < 32 KB gz; script-tag build (everything but export inlined) < 39 KB gz; screenshot and zip chunks lazy; published package has zero runtime dependencies                                                          |
+| bundle      | size-limit                                                                  | activation stub < 4 KB gz (asserted to contain no Lit/Zod); panel < 21.5 KB gz; picker < 4.25 KB gz; screenshot < 10.5 KB gz; display capture < 2 KB gz; delivery < 12 KB gz; export < 32 KB gz; script-tag build (everything but export inlined) < 40 KB gz; screenshot, display and zip chunks lazy; published package has zero runtime dependencies                     |
 | coexistence | Vitest browser mode                                                         | hostile host CSS; host already using Lit (different version); double registration (script tag + npm); host z-index 2147483647 overlay; host focus trap (a capture-phase `focusin` trap, and `focus-trap` with and without the pause/unpause recipe); `unmount()` leaves no listeners/elements behind                                                                       |
 | package     | publint + attw                                                              | exports, types and bin resolve correctly for ESM, bundler and node16 resolution                                                                                                                                                                                                                                                                                            |
 | smoke       | `scripts/smoke-pack.mjs`                                                    | the tarball users actually get: zero runtime deps, no `@field-notes/*` leaks in JS or `.d.ts`, subpath imports, bin, nodenext type resolution, README/LICENSE present                                                                                                                                                                                                      |
