@@ -219,13 +219,8 @@ export function createOutbox(
       const added = Math.max(Date.now(), lastAdded + 1);
       lastAdded = added;
       const t0 = performance.now();
-      const fresh = connection === undefined;
-      // eslint-disable-next-line no-console
-      console.info(`[diag] add start fresh=${String(fresh)}`);
       const database = await db();
       const t1 = performance.now();
-      // eslint-disable-next-line no-console
-      console.info(`[diag] add opened ${String(Math.round(t1 - t0))}ms`);
       const tx = database.transaction('entries', 'readwrite');
       // Both at once: a failed add (a duplicate id) aborts the transaction,
       // and tx.done must not reject unheard.
