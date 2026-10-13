@@ -144,6 +144,66 @@ await check("a consumer's production build resolves enabled: 'auto' to off", asy
   assert(!code.includes('process.env'), 'NODE_ENV was left for the browser to look up');
 });
 
+await check(
+  "a consumer's production build with enabled: 'query' ships only the stub until ?field-notes=1",
+  async () => {
+    const chunks = await consumerBuild(
+      `import { mountFieldNotes } from 'field-notes';\nmountFieldNotes({ enabled: 'query' });`,
+    );
+    const entry = chunks.find((chunk) => chunk.isEntry);
+    assert(entry, 'no entry chunk');
+    assert(entry.code.includes('field-notes:enabled'), "the 'query' check is missing");
+    assert(!entry.code.includes(LIT) && !entry.code.includes(ZOD), 'Lit or Zod is in the entry');
+    assert(
+      chunks.some((chunk) => chunk.code.includes(LIT)),
+      'the panel was not split into a chunk',
+    );
+
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      const origin = 'http://field-notes.test';
+      const requested: string[] = [];
+      await page.route(`${origin}/**`, async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === '/') {
+          await route.fulfill({
+            contentType: 'text/html',
+            body: `<!doctype html><script type="module" src="/${entry.fileName}"></script>`,
+          });
+          return;
+        }
+        requested.push(path);
+        const chunk = chunks.find((c) => `/${c.fileName}` === path);
+        await route.fulfill(
+          chunk ? { contentType: 'text/javascript', body: chunk.code } : { status: 404 },
+        );
+      });
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      /** Opens the page, and says whether the widget mounted. */
+      const mounted = async (search: string): Promise<boolean> => {
+        await page.goto(`${origin}/${search}`);
+        await page.waitForLoadState('load');
+        return page.evaluate(() => document.querySelector('field-notes') !== null);
+      };
+
+      assert(!(await mounted('')), 'the widget mounted without ?field-notes=1');
+      assert(
+        requested.length === 1 && requested[0] === `/${entry.fileName}`,
+        `more than the stub loaded: ${requested.join(', ')}`,
+      );
+      assert(await mounted('?field-notes=1'), 'the widget did not mount with ?field-notes=1');
+      assert(await mounted(''), 'the widget did not stay on after ?field-notes=1');
+      assert(!(await mounted('?field-notes=0')), 'the widget stayed on after ?field-notes=0');
+      assert(!(await mounted('')), 'the widget came back after ?field-notes=0');
+      assert(errors.length === 0, `page errors: ${errors.join('; ')}`);
+    } finally {
+      await browser.close();
+    }
+  },
+);
+
 await check('script tag and npm import on one page share a single widget', async () => {
   const browser = await chromium.launch();
   try {
