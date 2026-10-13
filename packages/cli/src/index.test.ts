@@ -317,6 +317,27 @@ describe('import', () => {
     await expect(stat(dir)).rejects.toThrow(/ENOENT/);
   });
 
+  it('rejects a zip with one unsafe entry among good notes, writing none of them', async () => {
+    const good = writeBundle([
+      { note: note('n1', 'one'), attachments: {} },
+      { note: note('n2', 'two'), attachments: {} },
+    ]);
+    // Same length, so the zip stays well formed: `items/../two/note.md`.
+    const from = new TextEncoder().encode('items/n2-two/');
+    const to = new TextEncoder().encode('items/../two/');
+    const evil = good.slice();
+    for (let at = 0; at <= evil.length - from.length; at++) {
+      if (from.every((byte, i) => evil[at + i] === byte)) evil.set(to, at);
+    }
+    const zip = join(root, 'evil.zip');
+    await writeFile(zip, evil);
+    const dir = join(root, '.field-notes');
+    const result = await capture(['import', zip, '--dir', dir]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('items/../two/note.md');
+    await expect(stat(dir)).rejects.toThrow(/ENOENT/);
+  });
+
   it('rejects a zip over the size limit without reading it', async () => {
     const zip = join(root, 'huge.zip');
     await writeFile(zip, '');

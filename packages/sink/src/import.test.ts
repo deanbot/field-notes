@@ -97,6 +97,22 @@ describe('importBundle', () => {
     expect(await readdir(join(dir, 'items'))).toEqual(['n1-first-text']);
   });
 
+  it('imports an id once when the zip has it twice', async () => {
+    const dir = join(root, '.field-notes');
+    const result = await importBundle(
+      dir,
+      writeBundle([
+        { note: note('n1', 'one'), attachments: {} },
+        { note: note('n1', 'two'), attachments: {} },
+      ]),
+    );
+    expect(result.ok && result.value).toEqual({
+      imported: ['items/n1-one'],
+      skipped: ['n1'],
+      conflicts: [],
+    });
+  });
+
   it('reports a note whose directory is taken by another note, and leaves that one alone', async () => {
     const dir = join(root, '.field-notes');
     // `a.b` and `a_b` share a directory name: ids map `.` to `_`.
