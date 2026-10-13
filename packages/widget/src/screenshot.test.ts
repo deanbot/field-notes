@@ -651,8 +651,9 @@ describe('the screenshot in the widget', () => {
         bubbles: true,
         cancelable: true,
       });
-      // Firefox leaves out a clipboardData passed to the constructor.
-      if (!event.clipboardData) Object.defineProperty(event, 'clipboardData', { value: data });
+      // Set directly: Firefox makes its own copy of a clipboardData passed to
+      // the constructor, without the files.
+      Object.defineProperty(event, 'clipboardData', { value: data });
       return textarea().dispatchEvent(event);
     }
     function drag(type: 'dragover' | 'drop', data: DataTransfer): boolean {
