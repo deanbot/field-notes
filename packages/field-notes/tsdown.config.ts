@@ -54,7 +54,7 @@ export default defineConfig([
   {
     ...shared,
     name: 'node',
-    entry: { sink: 'src/sink.ts' },
+    entry: { sink: 'src/sink.ts', vite: 'src/vite.ts', middleware: 'src/middleware.ts' },
     platform: 'node',
     target: 'node22',
     clean: false,

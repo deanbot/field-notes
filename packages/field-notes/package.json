@@ -30,6 +30,14 @@
       "types": "./dist/sink.d.ts",
       "default": "./dist/sink.js"
     },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "default": "./dist/vite.js"
+    },
+    "./middleware": {
+      "types": "./dist/middleware.d.ts",
+      "default": "./dist/middleware.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

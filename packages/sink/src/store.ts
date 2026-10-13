@@ -63,7 +63,7 @@ export const DEFAULT_GITIGNORE = '*\n';
  * Creates `dir/items/`, and `dir/.gitignore` if there's none (never
  * overwriting one the user edited). `false` writes no `.gitignore`.
  */
-export async function setUpSinkDir(
+async function setUpSinkDir(
   dir: string,
   gitignore: string | false = DEFAULT_GITIGNORE,
 ): Promise<void> {

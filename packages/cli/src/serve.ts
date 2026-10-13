@@ -1,11 +1,9 @@
 // `field-notes serve`: the standalone sink, for apps whose dev server can't
 // mount the plugin or middleware. Binds to 127.0.0.1 only.
-import { randomBytes } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { join, resolve } from 'node:path';
-import { DEFAULT_ALLOWED_ORIGINS, createSinkHandler, setUpSinkDir } from '@field-notes/sink';
+import { resolve } from 'node:path';
+import { DEFAULT_ALLOWED_ORIGINS, createSinkHandler, prepareSinkDir } from '@field-notes/sink';
 
 export interface ServeOptions {
   readonly port: number;
@@ -27,29 +25,9 @@ export interface Serving {
 /** Where the built widget leaves the token for `serve` to fill in. */
 export const TOKEN_PLACEHOLDER = '{{field-notes-token}}';
 
-const TOKEN = /^[\w-]{20,}$/;
-
-/**
- * The token from `dir/.token`, or a new one written there (owner-only). Kept
- * across restarts: a tab still holding it keeps working.
- */
-async function loadToken(dir: string): Promise<string> {
-  const file = join(dir, '.token');
-  const existing = await readFile(file, 'utf8').then(
-    (text) => text.trim(),
-    () => '',
-  );
-  if (TOKEN.test(existing)) return existing;
-  const token = randomBytes(32).toString('base64url');
-  await writeFile(file, `${token}\n`, { mode: 0o600 });
-  return token;
-}
-
 export async function serve(options: ServeOptions): Promise<Serving> {
   const dir = resolve(options.dir);
-  // `.gitignore` first, so the token is never untracked-but-visible to git.
-  await setUpSinkDir(dir);
-  const token = await loadToken(dir);
+  const token = prepareSinkDir(dir);
   const sink = createSinkHandler({
     dir,
     token,

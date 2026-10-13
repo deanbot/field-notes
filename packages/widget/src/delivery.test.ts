@@ -222,6 +222,104 @@ describe('delivery', () => {
   });
 });
 
+describe('a sink on the page origin (the Vite plugin, the middleware)', () => {
+  /**
+   * Stands in for a sink mounted on the test page's own server: same-origin
+   * GETs of /__field-notes get `tokens` in turn, and POSTs go to the real sink.
+   */
+  async function sameOriginSink(
+    tokens: string[],
+  ): Promise<{ gets: () => number; posts: () => number; down: (value: boolean) => void }> {
+    const { endpoint } = await startSink();
+    const real = window.fetch.bind(window);
+    let gets = 0;
+    let posts = 0;
+    let down = false;
+    vi.spyOn(window, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (url.origin !== location.origin || url.pathname !== '/__field-notes')
+        return real(input, init);
+      // The dev server is restarting: nothing answers.
+      if (down) return Promise.reject(new TypeError('Failed to fetch'));
+      if ((init?.method ?? 'GET') === 'GET') {
+        const token = tokens[Math.min(gets++, tokens.length - 1)];
+        return Promise.resolve(Response.json({ token }));
+      }
+      posts++;
+      return real(endpoint, init);
+    });
+    return {
+      gets: () => gets,
+      posts: () => posts,
+      down: (value) => {
+        down = value;
+      },
+    };
+  }
+
+  it('asks it for the token, so the widget needs no options', async () => {
+    const sink = await sameOriginSink(['test-sink-token']);
+    handle = mountFieldNotes({ enabled: true });
+    await submit('handed over');
+    await vi.waitFor(async () => {
+      expect(await bodies()).toEqual(['handed over']);
+    });
+    await submit('and again');
+    await vi.waitFor(async () => {
+      expect(await bodies()).toEqual(['and again', 'handed over']);
+    });
+    expect(sink.gets()).toBe(1);
+  });
+
+  it('asks again after the sink refuses a token, as after .token was replaced', async () => {
+    const sink = await sameOriginSink(['stale-token-from-before', 'test-sink-token']);
+    handle = mountFieldNotes({ enabled: true });
+    await submit('after a new token');
+    await vi.waitFor(
+      async () => {
+        expect(await bodies()).toEqual(['after a new token']);
+      },
+      { timeout: 5000 },
+    );
+    expect(sink.gets()).toBe(2);
+    expect(sink.posts()).toBe(2);
+  });
+
+  it('retries on its own when the dev server was down as the note was added', async () => {
+    const sink = await sameOriginSink(['test-sink-token']);
+    sink.down(true);
+    handle = mountFieldNotes({ enabled: true });
+    await submit('while restarting');
+    await new Promise((done) => setTimeout(done, 300));
+    sink.down(false);
+    // No new note, no online or visibility event: the backoff alone sends it.
+    await vi.waitFor(
+      async () => {
+        expect(await bodies()).toEqual(['while restarting']);
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  it('sends nothing, and counts no failure, when nothing there hands out a token', async () => {
+    const real = window.fetch.bind(window);
+    const sent: string[] = [];
+    vi.spyOn(window, 'fetch').mockImplementation((input, init) => {
+      sent.push(init?.method ?? 'GET');
+      return real(input, init);
+    });
+    handle = mountFieldNotes({ enabled: true });
+    await submit('no sink here');
+    await vi.waitFor(() => {
+      expect(sent).toContain('GET');
+    });
+    await new Promise((done) => setTimeout(done, 300));
+    expect(sent).not.toContain('POST');
+    const [entry] = await outbox().list();
+    expect(entry).toMatchObject({ state: 'pending', attempts: 0 });
+  });
+});
+
 describe('script tag served by the sink', () => {
   it('sends to the server it came from, with the token it was served with', async () => {
     const { endpoint, token } = await startSink();

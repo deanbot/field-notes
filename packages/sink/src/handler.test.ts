@@ -460,6 +460,56 @@ describe('refusing requests', () => {
     expect(text.status).toBe(415);
   });
 
+  it('hands the token only to a same-origin GET, and only when asked to', async () => {
+    await start({ tokenToSameOrigin: true });
+    const get = (headers: Record<string, string>): Promise<Response> =>
+      fetch(`${base}/__field-notes`, { headers });
+    const same = await get({ 'sec-fetch-site': 'same-origin' });
+    expect(same.status).toBe(200);
+    expect(await same.json()).toEqual({ token: TOKEN });
+    expect(same.headers.get('cache-control')).toBe('no-store');
+    for (const headers of [{ 'sec-fetch-site': 'cross-site' }, {}, { origin: ORIGIN }]) {
+      const res = await get(headers);
+      expect(res.status).toBe(403);
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    }
+    // POSTs still need the token.
+    expect((await post(payload(), { [TOKEN_HEADER]: '' })).status).toBe(401);
+    await stop(server);
+    await start();
+    expect((await get({ 'sec-fetch-site': 'same-origin' })).status).toBe(403);
+  });
+
+  it('keeps the token from clients on other machines, whatever headers they send', async () => {
+    const handler = createSinkHandler({
+      dir,
+      token: TOKEN,
+      defaultAuthor: false,
+      tokenToSameOrigin: true,
+    });
+    let peer = '192.168.1.20';
+    const running = createServer((req, res) => {
+      // As if the request came over the network (`vite --host`).
+      Object.defineProperty(req.socket, 'remoteAddress', { value: peer, configurable: true });
+      handler(req, res);
+    });
+    server = running;
+    await new Promise<void>((done) => running.listen(0, '127.0.0.1', done));
+    base = `http://127.0.0.1:${String((running.address() as AddressInfo).port)}`;
+    const get = (): Promise<Response> =>
+      fetch(`${base}/__field-notes`, { headers: { 'sec-fetch-site': 'same-origin' } });
+    for (const address of ['192.168.1.20', '10.0.0.5', 'fe80::1', '::ffff:192.168.1.20']) {
+      peer = address;
+      const res = await get();
+      expect(res.status, address).toBe(403);
+      expect(await res.text()).not.toContain(TOKEN);
+    }
+    for (const address of ['127.0.0.1', '127.1.2.3', '::1', '::ffff:127.0.0.1']) {
+      peer = address;
+      expect((await get()).status, address).toBe(200);
+    }
+  });
+
   it('passes other paths to next, or answers 404', async () => {
     const handler = createSinkHandler({ dir, token: TOKEN, defaultAuthor: false });
     const next = vi.fn();

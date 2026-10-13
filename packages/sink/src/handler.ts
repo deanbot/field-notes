@@ -39,6 +39,12 @@ export interface SinkOptions {
   readonly defaultAuthor?: string | false | undefined;
   /** Default `/__field-notes`. */
   readonly path?: string | undefined;
+  /**
+   * Answer a same-origin `GET` with the token, so a widget served from the
+   * same dev server needs no configuration. For the Vite plugin and the
+   * middleware; `serve` is never same-origin with the app. Default false.
+   */
+  readonly tokenToSameOrigin?: boolean | undefined;
 }
 
 /**
@@ -84,6 +90,13 @@ class RequestError extends Error {
     super(message);
     this.code = code;
   }
+}
+
+/** Whether a peer address is this machine: 127.0.0.0/8 or ::1, IPv4-mapped too. */
+function isLoopback(address: string | undefined): boolean {
+  if (!address) return false;
+  const v4 = address.startsWith('::ffff:') ? address.slice(7) : address;
+  return v4.startsWith('127.') || address === '::1';
 }
 
 const digest = (text: string): Buffer => createHash('sha256').update(text).digest();
@@ -244,6 +257,23 @@ export function createSinkHandler(options: SinkOptions): SinkHandler {
     if (url?.pathname !== path) {
       if (next) next();
       else reply(res, 404, { error: 'not-found', message: 'not found' });
+      return;
+    }
+    // Before the origin check: browsers send no Origin on a same-origin GET.
+    // `Sec-Fetch-Site` is set by the browser, and no CORS headers go out,
+    // so no other site's page can read the answer. Only to this machine:
+    // a dev server listening on the network (`vite --host`, Express's
+    // default) must not hand the token to any client that forges the header.
+    if (options.tokenToSameOrigin && req.method === 'GET') {
+      if (req.headers['sec-fetch-site'] === 'same-origin' && isLoopback(req.socket.remoteAddress)) {
+        res.setHeader('Cache-Control', 'no-store');
+        reply(res, 200, { token: options.token });
+      } else {
+        reply(res, STATUS.origin, {
+          error: 'origin',
+          message: 'the token is for same-origin pages',
+        });
+      }
       return;
     }
     const origin = req.headers.origin;
