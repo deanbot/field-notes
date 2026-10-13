@@ -232,6 +232,10 @@ importers:
       '@field-notes/sink':
         specifier: workspace:*
         version: link:../sink
+    devDependencies:
+      '@field-notes/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core:
     dependencies:

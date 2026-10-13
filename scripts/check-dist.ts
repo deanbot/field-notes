@@ -3,7 +3,7 @@
 // what each file may contain, that a consumer's production build drops the
 // widget, and that the script-tag and npm builds share a page in a browser.
 // (The DOM types are for the callbacks that run in that page.)
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -231,7 +231,7 @@ await check(
 );
 
 await check(
-  "a consumer's production build in export mode downloads a zip of the notes, sending nothing",
+  "a consumer's production build in export mode downloads a zip of the notes, sending nothing, and `field-notes import` takes it once",
   async () => {
     const chunks = await consumerBuild(
       `import { mountFieldNotes } from 'field-notes';\nwindow.fieldNotes = mountFieldNotes({ enabled: true, mode: 'export' });`,
@@ -291,6 +291,37 @@ await check(
         'the zip does not hold the note',
       );
       assert(new TextDecoder().decode(zip).includes('index.md'), 'the zip has no index.md');
+
+      // The built `field-notes import` takes it into a project, once.
+      const project = mkdtempSync(join(tmpdir(), 'field-notes-check-import-'));
+      try {
+        const zipFile = join(project, name);
+        writeFileSync(zipFile, zip);
+        const importIt = (): ReturnType<typeof spawnSync> =>
+          spawnSync(process.execPath, [join(dist, 'cli.js'), 'import', zipFile], {
+            cwd: project,
+            encoding: 'utf8',
+          });
+        const first = importIt();
+        assert(first.status === 0, `import failed: ${String(first.stderr)}`);
+        const items = join(project, '.field-notes', 'items');
+        const [dir] = finishedNotes(items);
+        assert(dir, 'import wrote no note');
+        assert(
+          readFileSync(join(items, dir, 'note.md'), 'utf8').includes(
+            'Exported from a production build',
+          ),
+          'the imported note is not the exported one',
+        );
+        const again = importIt();
+        assert(
+          again.status === 0 && String(again.stdout).includes('1 note already there'),
+          `importing again was not a no-op: ${String(again.stdout)}${String(again.stderr)}`,
+        );
+        assert(finishedNotes(items).length === 1, 'importing again added notes');
+      } finally {
+        rmSync(project, { recursive: true, force: true });
+      }
       assert(
         requested.some((path) => /\/export-[^/]*\.js$/.test(path)),
         'no export chunk was loaded',

@@ -7,3 +7,5 @@ export { fieldNotes } from './vite.ts';
 export type { FieldNotesViteOptions, FieldNotesVitePlugin, FieldNotesViteServer } from './vite.ts';
 export { fieldNotesMiddleware } from './middleware.ts';
 export type { FieldNotesMiddlewareOptions } from './middleware.ts';
+export { MAX_IMPORT_BYTES, importBundle } from './import.ts';
+export type { ImportOutcome, ImportResult } from './import.ts';

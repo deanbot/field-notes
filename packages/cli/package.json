@@ -11,5 +11,8 @@
   },
   "dependencies": {
     "@field-notes/sink": "workspace:*"
+  },
+  "devDependencies": {
+    "@field-notes/core": "workspace:*"
   }
 }

@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, truncate, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { writeBundle } from '@field-notes/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type CliIo, run } from './index.ts';
 import { TOKEN_PLACEHOLDER } from './serve.ts';
@@ -245,6 +246,108 @@ describe('serve', () => {
       const result = await capture(['serve', '--port', port]);
       expect(result.code).toBe(2);
       expect(result.stderr).toContain('--port');
+    }
+  });
+});
+
+describe('import', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'field-notes-import-cli-'));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const note = (id: string, body: string) => ({
+    id,
+    schema: 1 as const,
+    status: 'open' as const,
+    created: '2026-10-09T18:42:11.204Z',
+    body,
+  });
+
+  async function zipOf(...bodies: [string, string][]): Promise<string> {
+    const file = join(root, `export-${String(Math.random()).slice(2)}.zip`);
+    await writeFile(
+      file,
+      writeBundle(bodies.map(([id, body]) => ({ note: note(id, body), attachments: {} }))),
+    );
+    return file;
+  }
+
+  it('imports the notes, and says so', async () => {
+    const zip = await zipOf(['n1', 'one'], ['n2', 'two']);
+    const dir = join(root, '.field-notes');
+    const result = await capture(['import', zip, '--dir', dir]);
+    expect(result).toEqual({ code: 0, stdout: `Imported 2 notes into ${dir}.\n`, stderr: '' });
+    expect((await readdir(join(dir, 'items'))).sort()).toEqual(['n1-one', 'n2-two']);
+  });
+
+  it('is a no-op the second time', async () => {
+    const zip = await zipOf(['n1', 'one']);
+    const dir = join(root, '.field-notes');
+    await capture(['import', zip, '--dir', dir]);
+    expect(await capture(['import', zip, '--dir', dir])).toEqual({
+      code: 0,
+      stdout: `Imported 0 notes into ${dir} (1 note already there).\n`,
+      stderr: '',
+    });
+  });
+
+  it('reports conflicts and exits 1', async () => {
+    const dir = join(root, '.field-notes');
+    await capture(['import', await zipOf(['a.b', 'same']), '--dir', dir]);
+    const result = await capture(['import', await zipOf(['a_b', 'same']), '--dir', dir]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toBe(
+      'Conflict: items/a_b-same holds another note, so a_b was not imported.\n',
+    );
+  });
+
+  it('rejects a hostile or broken zip with exit 1, writing nothing', async () => {
+    const zip = join(root, 'evil.zip');
+    await writeFile(zip, 'PK not really');
+    const dir = join(root, '.field-notes');
+    const result = await capture(['import', zip, '--dir', dir]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('is not a field-notes export, or is damaged');
+    await expect(stat(dir)).rejects.toThrow(/ENOENT/);
+  });
+
+  it('rejects a zip over the size limit without reading it', async () => {
+    const zip = join(root, 'huge.zip');
+    await writeFile(zip, '');
+    await truncate(zip, 256 * 2 ** 20 + 1);
+    const result = await capture(['import', zip, '--dir', join(root, 'x')]);
+    expect(result).toMatchObject({
+      code: 1,
+      stderr: `${zip} is over 256 MiB; not importing it.\n`,
+    });
+  });
+
+  it('exits 1 when the zip is missing or the directory unusable', async () => {
+    const missing = await capture(['import', join(root, 'nope.zip')]);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain("Can't read");
+    await writeFile(join(root, 'file'), '');
+    const unusable = await capture([
+      'import',
+      await zipOf(['n', 'x']),
+      '--dir',
+      join(root, 'file'),
+    ]);
+    expect(unusable.code).toBe(1);
+    expect(unusable.stderr).toContain("Couldn't import into");
+  });
+
+  it('wants exactly one zip', async () => {
+    for (const argv of [['import'], ['import', 'a.zip', 'b.zip']]) {
+      const result = await capture(argv);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain('import takes one zip file');
     }
   });
 });
