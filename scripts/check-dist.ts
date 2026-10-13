@@ -481,7 +481,12 @@ if (process.env.CI) {
         });
         // A click: sharing needs a user gesture.
         await page.locator('field-notes .trigger').click();
-        await page.locator('.shot img[src^="blob:"]').waitFor();
+        await page
+          .locator('.shot img[src^="blob:"]')
+          .waitFor({ timeout: 10_000 })
+          .catch((error: unknown) => {
+            throw new Error(`${name}: no screenshot. ${String(error)}`);
+          });
         assert(
           requested.some((path) => /\/display-[^/]*\.js$/.test(path)),
           `${name}: the display chunk did not load`,
