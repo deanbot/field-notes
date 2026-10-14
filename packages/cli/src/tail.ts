@@ -3,6 +3,7 @@
 // directories not seen yet: events that are merged, dropped or misnamed (as
 // recursive watches do, by platform) can't lose a note or print one twice.
 import { watch } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { cleanLine, jsonItem, summary } from './list.ts';
@@ -49,6 +50,9 @@ export async function tail(options: TailOptions): Promise<number> {
   let watcher;
   for (let waited = false; ; waited = true) {
     try {
+      // Looked for first: a recursive watch on Linux doesn't always throw
+      // for a directory that isn't there.
+      await stat(itemsDir);
       watcher = watch(itemsDir, { recursive: true, signal });
       break;
     } catch (error) {
