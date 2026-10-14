@@ -2,6 +2,15 @@
 // chunk. State and submit logic live here; the template is a thin view of it.
 import type { Note } from '@field-notes/core/note';
 import { html, nothing, type TemplateResult } from 'lit/html.js';
+import {
+  MAX_AUTHOR,
+  asksAuthor,
+  authorAsked,
+  cleanAuthor,
+  loadAuthor,
+  saveAuthor,
+  skipAuthor,
+} from './author.ts';
 import { awaitContext, buildNote, resolveAuthor, startContext } from './capture.ts';
 import { clearDraft, loadDraft, restoreDraft, saveDraft } from './drafts.ts';
 import type { FieldNotesOptions } from './mount.ts';
@@ -95,6 +104,11 @@ export function createForm(deps: FormDeps): Form {
   let thumb: string | undefined;
   let error = '';
   let busy = false;
+  /** The name typed in this form, in export mode. */
+  let name = '';
+  const asks = asksAuthor(options);
+  // Read each time: "My notes" can set it while the form is open.
+  const askingName = (): boolean => asks && !authorAsked();
   // Called now, so a slow callback has the whole time the form is open; the
   // timeout only starts at submit.
   const context = startContext(options.context);
@@ -134,6 +148,11 @@ export function createForm(deps: FormDeps): Form {
     // doesn't cancel it, and a reopened panel starts empty, so nothing can be
     // added twice. Only unmount cancels, and then the text goes back.
     const sent = { text, type };
+    // Read now: once it's saved, the field goes.
+    const asking = askingName();
+    const typed = asking ? cleanAuthor(name) : undefined;
+    if (typed) saveAuthor(typed);
+    else if (asking) skipAuthor();
     clearDraft();
     busy = true;
     error = '';
@@ -150,7 +169,7 @@ export function createForm(deps: FormDeps): Form {
       const note = buildNote({
         body,
         type,
-        author: resolveAuthor(options.author),
+        author: asks ? (typed ?? loadAuthor()) : resolveAuthor(options.author),
         environment: options.environment ?? 'local',
         selection: deps.selection,
         element: picked?.element,
@@ -307,6 +326,26 @@ export function createForm(deps: FormDeps): Form {
                   >`,
               )}
             </fieldset>`
+          : ''
+      }
+      ${
+        askingName()
+          ? html`<label class="label" for="field-notes-author">Your name (optional)</label>
+              <input
+                id="field-notes-author"
+                type="text"
+                autocomplete="name"
+                maxlength=${MAX_AUTHOR}
+                aria-describedby="field-notes-author-hint"
+                ?readonly=${busy}
+                .value=${name}
+                @input=${(event: Event) => {
+                  name = (event.target as HTMLInputElement).value;
+                }}
+              />
+              <p id="field-notes-author-hint" class="meta">
+                Asked once, and kept in this browser. Change it in My notes.
+              </p>`
           : ''
       }
       <p id="field-notes-error" class="error" role="alert">${error}</p>

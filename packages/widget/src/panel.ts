@@ -4,6 +4,7 @@
 import { html, nothing, render } from 'lit/html.js';
 import type { Corner } from './button.ts';
 import { deliver } from './deliver.ts';
+import { asksAuthor } from './author.ts';
 import { type Exporting, createDrawer } from './drawer.ts';
 import { type FormDeps, createForm, resolveTypes } from './form.ts';
 import type { LoadExport } from './mount.ts';
@@ -102,20 +103,19 @@ h2 { margin: 0; font-size: 16px; font-weight: 600; }
 .close:focus-visible { outline: 2px solid var(--_accent); outline-offset: 1px; }
 .body { display: grid; gap: 8px; padding: 12px 16px 16px; }
 .label { font-size: 12px; font-weight: 600; }
-textarea {
+textarea, input[type='text'] {
   box-sizing: border-box;
   width: 100%;
-  min-height: 96px;
   padding: 8px;
-  resize: vertical;
   font: inherit;
   color: inherit;
   background: transparent;
   border: 1px solid var(--_border);
   border-radius: 6px;
 }
+textarea { min-height: 96px; resize: vertical; }
 textarea[aria-invalid='true'] { border-color: var(--field-notes-error, light-dark(#cf222e, #f85149)); }
-textarea:focus-visible, .chip input:focus-visible + span, .primary:focus-visible {
+textarea:focus-visible, input[type='text']:focus-visible, .chip input:focus-visible + span, .primary:focus-visible {
   outline: 2px solid var(--_accent);
   outline-offset: 1px;
 }
@@ -163,6 +163,7 @@ header .link { margin-left: auto; }
 .warning { margin: 0; font-size: 12px; font-weight: 600; }
 .actions > :first-child { margin-left: -6px; }
 .actions .hint { margin-left: auto; }
+.actions > .signed { margin: 0 auto 0 0; min-width: 0; overflow-wrap: anywhere; }
 .picked { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shot { display: flex; align-items: center; }
 .shot img {
@@ -381,6 +382,7 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
             notes: options.storageWarning?.notes ?? 50,
             bytes: (options.storageWarning?.megabytes ?? 100) * 1_000_000,
           },
+          signs: asksAuthor(options),
         }
       : undefined;
   const drawer = createDrawer({
