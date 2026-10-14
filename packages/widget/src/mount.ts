@@ -47,8 +47,8 @@ export interface FieldNotesOptions {
   environment?: string | undefined;
   /**
    * Recorded on each note when set. Without it, the local sink records
-   * `git config user.name`, and export mode asks for a name once and keeps it
-   * in this browser.
+   * `git config user.name`, and export mode asks for a name once and
+   * keeps it in this browser.
    */
   author?: string | (() => string) | undefined;
   /**

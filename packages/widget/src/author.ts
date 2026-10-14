@@ -1,7 +1,7 @@
 // Export mode's author: asked for once in the panel and kept in this
-// viewer's localStorage (empty once skipped), as nothing else fills it in (in local mode the sink
-// has `git config user.name`). Storage can be missing, full or blocked; then
-// the name just isn't remembered.
+// viewer's localStorage (empty once skipped), as nothing else fills it in
+// (in local mode the sink has `git config user.name`). Storage can be
+// missing, full or blocked; then the name just isn't remembered.
 
 import type { FieldNotesOptions } from './mount.ts';
 
