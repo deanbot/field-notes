@@ -1,7 +1,8 @@
 // `export`: one digest of the notes, for a meeting, a doc or a spreadsheet.
 // Notes are untrusted input (spec/SPEC.md), and a digest is pasted where it
-// will be rendered, so each format keeps their text inert: markdown can't add
-// HTML, images, links or structure, and a CSV cell can't become a formula.
+// will be rendered. In markdown, a note's text can't add HTML or images, hide
+// a link's target, or reach outside its own section; a CSV cell can't become
+// a formula. docs/cli.md lists what's left.
 import { relative, sep } from 'node:path';
 import type { NoteStatus } from '@field-notes/core';
 import type { Item } from './notes.ts';

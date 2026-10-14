@@ -134,6 +134,15 @@ describe('export', () => {
     );
   });
 
+  // File snapshots compare line breaks loosely, so these are checked here.
+  it('writes CSV with a byte order mark and CRLF line breaks', async () => {
+    await fixture();
+    const text = await exported('--format', 'csv');
+    expect(text.startsWith('﻿id,status,')).toBe(true);
+    expect(text.match(/\r\n01JA8X/g)).toHaveLength(4);
+    expect(text.endsWith(',\r\n')).toBe(true);
+  });
+
   it('groups by type in any case, and by author', async () => {
     await fixture();
     const byType = await exported('--group-by', 'type', '--type', 'bug', '--type', 'change');
