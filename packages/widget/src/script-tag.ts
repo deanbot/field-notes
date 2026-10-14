@@ -25,7 +25,7 @@ export interface ScriptApi {
 const CORNERS: readonly string[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const TRIGGERS: readonly string[] = ['button', 'hotkey'];
 const SURFACES: readonly string[] = ['popover', 'sheet', 'side'];
-const SCREENSHOTS: readonly string[] = ['dom', 'off'];
+const SCREENSHOTS: readonly string[] = ['dom', 'display', 'off'];
 
 /** `16` → 16; `8,24` → x 8, y 24. Anything else is ignored. */
 function parseOffset(text: string): Offset | undefined {
@@ -39,7 +39,7 @@ function parseOffset(text: string): Offset | undefined {
  * Options from the script tag's `data-*` attributes: `data-enabled`
  * (`true`/`false`), `data-trigger` (`"button hotkey"`, or empty for API only),
  * `data-position` (a corner), `data-offset` (`16` or `8,24`), `data-surface`
- * (`popover`, `sheet` or `side`), `data-screenshot` (`dom` or `off`),
+ * (`popover`, `sheet` or `side`), `data-screenshot` (`dom`, `display` or `off`),
  * `data-hotkey`, `data-endpoint` and `data-token`.
  * Values it doesn't recognise are ignored.
  */
@@ -59,7 +59,7 @@ export function scriptOptions(script: HTMLOrSVGScriptElement | null): FieldNotes
   if (offset !== undefined) options.buttonOffset = offset;
   if (data.surface && SURFACES.includes(data.surface)) options.surface = data.surface as Surface;
   if (data.screenshot && SCREENSHOTS.includes(data.screenshot)) {
-    options.screenshot = data.screenshot as 'dom' | 'off';
+    options.screenshot = data.screenshot as 'dom' | 'display' | 'off';
   }
   if (data.hotkey) options.hotkey = data.hotkey;
   if (data.endpoint) options.endpoint = data.endpoint;

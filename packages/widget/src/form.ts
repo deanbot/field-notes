@@ -6,7 +6,7 @@ import { awaitContext, buildNote, resolveAuthor, startContext } from './capture.
 import { clearDraft, loadDraft, restoreDraft, saveDraft } from './drafts.ts';
 import type { FieldNotesOptions } from './mount.ts';
 import type { Picked } from './picker.ts';
-import type { Capture, Screenshot } from './screenshot.ts';
+import type { Capture, Screenshot } from './image.ts';
 import type { Attachments } from './transport.ts';
 
 const DEFAULT_TYPES: readonly string[] = ['bug', 'change', 'idea', 'question'];
@@ -212,6 +212,48 @@ export function createForm(deps: FormDeps): Form {
   };
   // Radios can't be unchecked, so a click on the chosen chip clears it.
   // The click lands before `change`, so a new choice still reads as new here.
+  // A pasted or dropped image takes the screenshot's place. Only an image
+  // on its own: a paste that also has text (from an office app, say) is text.
+  const takesFiles = (data: DataTransfer | null): data is DataTransfer =>
+    options.screenshot !== 'off' && !busy && !!data?.types.includes('Files');
+  const imageIn = (data: DataTransfer): File | undefined =>
+    [...data.files].find((file) => file.type.startsWith('image/'));
+  const attach = async (file: File): Promise<void> => {
+    const { fromFile } = await import('./image.ts');
+    const image = await fromFile(file);
+    if (unmounted() || busy) return;
+    if (image) {
+      useShot({
+        cloned: Promise.resolve(),
+        image: Promise.resolve(image),
+        cancel: () => undefined,
+      });
+    } else {
+      error = "Couldn't use that image.";
+    }
+    deps.redraw();
+  };
+  const onPaste = (event: ClipboardEvent): void => {
+    const data = event.clipboardData;
+    if (!takesFiles(data) || data.types.includes('text/plain')) return;
+    const file = imageIn(data);
+    if (!file) return;
+    event.preventDefault();
+    void attach(file);
+  };
+  const onDragOver = (event: DragEvent): void => {
+    if (!takesFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+  const onDrop = (event: DragEvent): void => {
+    if (!takesFiles(event.dataTransfer)) return;
+    // Never let the browser open a dropped file in place of the page.
+    event.preventDefault();
+    const file = imageIn(event.dataTransfer);
+    if (file) void attach(file);
+  };
+
   const onChipClick = (value: string) => (): void => {
     if (type !== value) return;
     type = undefined;
@@ -225,7 +267,14 @@ export function createForm(deps: FormDeps): Form {
   };
 
   const template = (): TemplateResult =>
-    html`<form class="body" novalidate @submit=${onSubmit}>
+    html`<form
+      class="body"
+      novalidate
+      @submit=${onSubmit}
+      @paste=${onPaste}
+      @dragover=${onDragOver}
+      @drop=${onDrop}
+    >
       <label class="label" for="field-notes-text">Note</label>
       <textarea
         id="field-notes-text"

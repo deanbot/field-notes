@@ -1,12 +1,13 @@
 import type { Note } from '@field-notes/core/note';
-import { page as browser, userEvent } from 'vitest/browser';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { page as browser, server, userEvent } from 'vitest/browser';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { deliver } from './deliver.ts';
 import { TAG_NAME } from './element.ts';
 import { type FieldNotesHandle, type FieldNotesOptions, mountFieldNotes } from './mount.ts';
 import { pickElement } from './picker.ts';
 import * as screenshotModule from './screenshot.ts';
-import { MAX_BYTES, WEBP_ABOVE, captureScreenshot, encode } from './screenshot.ts';
+import { MAX_BYTES, WEBP_ABOVE, encode } from './image.ts';
+import { captureScreenshot } from './screenshot.ts';
 import type { Attachments } from './transport.ts';
 
 vi.mock('./deliver.ts', () => ({ deliver: vi.fn(() => Promise.resolve()) }));
@@ -92,6 +93,56 @@ async function shoot(exclude: Element = document.createElement('div')): Promise<
 
 const reddish = (r: number, g: number, b: number): boolean => r > 150 && g < 100 && b < 100;
 
+/**
+ * A page of masked content, all red: text, its overflow, a far-off
+ * pseudo-element, a descendant positioned away, a password, an image, a
+ * shadow root and a same-origin frame. Resolves to where the red is on
+ * screen, but the pseudo-element's, which can't be measured.
+ */
+async function maskedPage(): Promise<() => DOMRect[]> {
+  const red = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="red"/></svg>')}`;
+  page(
+    `
+    <p data-field-notes-mask class="text" style="color:rgb(255,0,0);background:rgb(255,0,0)">4111 1111 1111 1111</p>
+    <div data-field-notes-mask class="overflow" style="width:20px;white-space:nowrap;color:rgb(255,0,0);font-size:40px">OVERFLOWING</div>
+    <div data-field-notes-mask class="before" style="height:20px"></div>
+    <div data-field-notes-mask><div><span class="away" style="position:absolute;left:200px;top:300px;width:40px;height:40px;background:rgb(255,0,0)"></span></div></div>
+    <input type="password" value="hunter2" style="color:rgb(255,0,0);font-size:40px">
+    <img data-field-notes-mask src="${red}" alt="Jane's passport" width="40" height="40">
+    <div class="host"></div>
+    <iframe class="frame" style="width:200px;height:60px;border:0"></iframe>`,
+    `.before::before { content: 'SECRET'; position: absolute; left: 250px; top: 500px; color: rgb(255,0,0); font-size: 40px; }`,
+  );
+  const inShadow = document.createElement('div');
+  inShadow.setAttribute('data-field-notes-mask', '');
+  inShadow.style.cssText = 'height:40px;background:rgb(255,0,0)';
+  inShadow.textContent = 'shadow';
+  find('.host').attachShadow({ mode: 'open' }).append(inShadow);
+  const frame = find('.frame');
+  if (!(frame instanceof HTMLIFrameElement)) throw new Error('no frame');
+  await new Promise((loaded) => {
+    frame.addEventListener('load', loaded, { once: true });
+    frame.srcdoc =
+      '<body style="margin:0"><div data-field-notes-mask style="height:60px;background:rgb(255,0,0)">in a frame</div></body>';
+  });
+  return () => {
+    const overflow = document.createRange();
+    overflow.selectNodeContents(find('.overflow'));
+    const inFrame = frame.contentDocument?.body.firstElementChild?.getBoundingClientRect();
+    const { x, y } = frame.getBoundingClientRect();
+    return [
+      ...['.text', '.away', 'input[type="password"]', 'img'].map((s) =>
+        find(s).getBoundingClientRect(),
+      ),
+      overflow.getBoundingClientRect(),
+      inShadow.getBoundingClientRect(),
+      ...(inFrame
+        ? [new DOMRect(inFrame.x + x, inFrame.y + y, inFrame.width, inFrame.height)]
+        : []),
+    ];
+  };
+}
+
 describe('captureScreenshot', () => {
   it('shows the viewport as it is seen: scrolled both ways, fixed, sticky and absolute elements, inner scrollers', async () => {
     // The default 8px body margin, a first child's margin collapsing through
@@ -122,28 +173,7 @@ describe('captureScreenshot', () => {
   });
 
   it('never shows masked content: text, its overflow, pseudo-elements, passwords, images, shadow roots, same-origin frames', async () => {
-    const red = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="red"/></svg>')}`;
-    page(
-      `
-      <p data-field-notes-mask style="color:rgb(255,0,0);background:rgb(255,0,0)">4111 1111 1111 1111</p>
-      <div data-field-notes-mask style="width:20px;white-space:nowrap;color:rgb(255,0,0);font-size:40px">OVERFLOWING</div>
-      <div data-field-notes-mask class="before" style="height:20px"></div>
-      <div data-field-notes-mask><span style="position:absolute;left:200px;top:300px;width:40px;height:40px;background:rgb(255,0,0)"></span></div>
-      <input type="password" value="hunter2" style="color:rgb(255,0,0);font-size:40px">
-      <img data-field-notes-mask src="${red}" alt="Jane's passport" width="40" height="40">
-      <div class="host"></div>
-      <iframe class="frame" style="width:200px;height:60px;border:0"></iframe>`,
-      `.before::before { content: 'SECRET'; position: absolute; left: 250px; top: 500px; color: rgb(255,0,0); font-size: 40px; }`,
-    );
-    find('.host').attachShadow({ mode: 'open' }).innerHTML =
-      '<div data-field-notes-mask style="height:40px;background:rgb(255,0,0)">shadow</div>';
-    const frame = find('.frame');
-    if (!(frame instanceof HTMLIFrameElement)) throw new Error('no frame');
-    await new Promise((loaded) => {
-      frame.addEventListener('load', loaded, { once: true });
-      frame.srcdoc =
-        '<body style="margin:0"><div data-field-notes-mask style="height:60px;background:rgb(255,0,0)">in a frame</div></body>';
-    });
+    await maskedPage();
     const shot = await shoot();
     expect(shot.some(reddish)).toBe(false);
   });
@@ -394,5 +424,387 @@ describe('the screenshot in the widget', () => {
     expect(cancel).toHaveBeenCalled();
     await h.open();
     expect(screenshotModule.captureScreenshot).toHaveBeenCalledTimes(2);
+  });
+
+  describe('shared as a tab', () => {
+    // A stand-in for the tab: a canvas the size of the viewport at the
+    // screenshot's scale, blue, with red where the masked field is.
+    function fakeTab(): HTMLCanvasElement {
+      const scale = Math.min(devicePixelRatio, 2);
+      const { clientWidth, clientHeight } = document.documentElement;
+      const canvas = document.createElement('canvas');
+      canvas.width = clientWidth * scale;
+      canvas.height = clientHeight * scale;
+      return canvas;
+    }
+    interface Share {
+      readonly ask: ReturnType<typeof vi.fn>;
+      readonly tracks: MediaStreamTrack[];
+      /** The widget button's display each time a frame was drawn from the share. */
+      readonly hiddenAtGrab: string[];
+      /** The box of each element the share was cropped to. */
+      readonly cropped: DOMRect[];
+      readonly answer: () => void;
+    }
+    function share(
+      how: {
+        answer?: 'share' | 'deny' | 'other';
+        later?: boolean;
+        regionCapture?: boolean;
+        /** As if not opened by a click or key (an earlier test's may still count). */
+        gesture?: boolean;
+        /** Where the tab shows masked content in red. Default: the password field. */
+        secrets?: () => DOMRect[];
+      } = {},
+    ): Share {
+      const {
+        answer: reply = 'share',
+        later = false,
+        regionCapture = true,
+        gesture = true,
+        secrets = () =>
+          [...document.querySelectorAll('input[type="password"]')].map((el) =>
+            el.getBoundingClientRect(),
+          ),
+      } = how;
+      const cropped: DOMRect[] = [];
+      vi.stubGlobal(
+        'CropTarget',
+        regionCapture
+          ? {
+              fromElement: (el: Element) => {
+                cropped.push(el.getBoundingClientRect());
+                return Promise.resolve({});
+              },
+            }
+          : undefined,
+      );
+      const tab = fakeTab();
+      const paint = tab.getContext('2d');
+      const tracks: MediaStreamTrack[] = [];
+      const draw = (): void => {
+        if (!paint) return;
+        paint.fillStyle = 'rgb(0, 0, 255)';
+        paint.fillRect(0, 0, tab.width, tab.height);
+        const scale = tab.width / document.documentElement.clientWidth;
+        paint.fillStyle = 'rgb(255, 0, 0)';
+        for (const { x, y, width, height } of secrets()) {
+          paint.fillRect(x * scale, y * scale, width * scale, height * scale);
+        }
+      };
+      // Some engines only send a frame once the canvas changes.
+      const timer = setInterval(draw, 16);
+      onTestFinished(() => {
+        clearInterval(timer);
+      });
+      let release: () => void = () => undefined;
+      const answered = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      if (!later) release();
+      const ask = vi.fn(async () => {
+        if (!gesture || !navigator.userActivation.isActive) {
+          throw new DOMException('needs a user gesture', 'InvalidStateError');
+        }
+        await answered;
+        if (reply === 'deny') throw new DOMException('Permission denied', 'NotAllowedError');
+        draw();
+        const stream = tab.captureStream();
+        tracks.push(...stream.getTracks());
+        for (const track of stream.getVideoTracks()) {
+          Object.assign(track, {
+            cropTo: () =>
+              reply === 'other'
+                ? Promise.reject(new DOMException('not this tab', 'NotSupportedError'))
+                : Promise.resolve(),
+          });
+        }
+        return stream;
+      });
+      vi.spyOn(navigator.mediaDevices, 'getDisplayMedia').mockImplementation(ask);
+      const hiddenAtGrab: string[] = [];
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- applied with its own this below
+      const drawImage = CanvasRenderingContext2D.prototype.drawImage;
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'drawImage').mockImplementation(function (
+        this: CanvasRenderingContext2D,
+        ...args: Parameters<typeof drawImage>
+      ) {
+        if (args[0] instanceof HTMLVideoElement) {
+          hiddenAtGrab.push(getComputedStyle(trigger()).display);
+        }
+        drawImage.apply(this, args);
+      });
+      return { ask, tracks, hiddenAtGrab, cropped, answer: release };
+    }
+    const trigger = (): HTMLElement => {
+      const found = shadow().querySelector<HTMLElement>('.trigger');
+      if (!found) throw new Error('no trigger');
+      return found;
+    };
+    const stopped = (tracks: MediaStreamTrack[]): boolean =>
+      tracks.length > 0 && tracks.every((track) => track.readyState === 'ended');
+    // Headless WebKit never plays a canvas stream; Safari can't prove a share
+    // is this tab anyway, so it only ever takes the DOM screenshot.
+    const plays = server.browser !== 'webkit';
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it.runIf(plays)(
+      "shares this tab without the widget, masked, at the DOM screenshot's scale",
+      async () => {
+        page(`<input type="password" value="secret" style="margin:40px">`);
+        const { ask, tracks, hiddenAtGrab, cropped } = share();
+        mount({ screenshot: 'display' });
+        await userEvent.click(trigger());
+        await vi.waitFor(() => {
+          expect(thumb()?.src).toMatch(/^blob:/);
+        });
+        expect(ask).toHaveBeenCalledOnce();
+        expect(screenshotModule.captureScreenshot).not.toHaveBeenCalled();
+        expect(hiddenAtGrab).toEqual(['none']);
+        expect(getComputedStyle(trigger()).display).not.toBe('none');
+        // The page's whole view, even though the page is shorter than it.
+        const { clientWidth, clientHeight } = document.documentElement;
+        expect(cropped.map(({ x, y, width, height }) => [x, y, width, height])).toEqual([
+          [0, 0, clientWidth, clientHeight],
+        ]);
+        const views = [...shadow().children].filter(
+          (el) => el instanceof HTMLElement && el.style.position === 'fixed',
+        );
+        expect(views).toEqual([]);
+        expect(stopped(tracks)).toBe(true);
+        const { note, attachments } = await submitted();
+        expect(note.screenshot).toBe('screenshot.png');
+        const blob = attachments['screenshot.png'];
+        if (!blob) throw new Error('no screenshot attached');
+        const shot = await pixels(blob);
+        expect(shot.scale).toBe(Math.min(devicePixelRatio, 2));
+        expect(shot.at(5, 5)).toBe('0,0,255');
+        expect(shot.some(reddish)).toBe(false);
+      },
+    );
+
+    it.runIf(plays)(
+      'masks what the DOM screenshot does: overflow, descendants positioned away, shadow roots, frames',
+      async () => {
+        const secrets = await maskedPage();
+        expect(secrets()).toHaveLength(7);
+        share({ secrets });
+        mount({ screenshot: 'display' });
+        await userEvent.click(trigger());
+        await vi.waitFor(() => {
+          expect(thumb()?.src).toMatch(/^blob:/);
+        });
+        const { attachments } = await submitted();
+        const blob = attachments['screenshot.png'];
+        if (!blob) throw new Error('no screenshot attached');
+        const shot = await pixels(blob);
+        expect(shot.some(reddish)).toBe(false);
+        for (const { x, y, width, height } of secrets()) {
+          expect(shot.at(x + width / 2, y + height / 2)).toBe('136,136,136');
+        }
+      },
+    );
+
+    it('takes the DOM screenshot when the user shares something else', async () => {
+      page(`<p>The page</p>`);
+      const { tracks } = share({ answer: 'other' });
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(thumb()?.src).toMatch(/^blob:/);
+      });
+      expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
+      expect(stopped(tracks)).toBe(true);
+    });
+
+    it('goes without, quietly, when the user declines', async () => {
+      page(`<p>The page</p>`);
+      const warn = vi.spyOn(console, 'warn');
+      const { ask } = share({ answer: 'deny' });
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(shadow().querySelector('dialog')?.open).toBe(true);
+      });
+      expect(ask).toHaveBeenCalledOnce();
+      expect(thumb()).toBeNull();
+      expect(shadow().querySelector('.error')?.textContent).toBe('');
+      const { note } = await submitted();
+      expect(note).not.toHaveProperty('screenshot');
+      expect(screenshotModule.captureScreenshot).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("takes the DOM screenshot when it can't ask: no user gesture", async () => {
+      page(`<p>The page</p>`);
+      const { ask } = share({ gesture: false });
+      await mount({ screenshot: 'display' }).open();
+      expect(ask).toHaveBeenCalledOnce();
+      expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
+    });
+
+    it("takes the DOM screenshot without asking where it can't prove a share is this tab", async () => {
+      page(`<p>The page</p>`);
+      const { ask } = share({ regionCapture: false });
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
+      });
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('stops a share that comes after the widget unmounted', async () => {
+      page(`<p>The page</p>`);
+      const { ask, tracks, answer } = share({ later: true });
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(ask).toHaveBeenCalledOnce();
+      });
+      handle?.unmount();
+      answer();
+      await vi.waitFor(() => {
+        expect(stopped(tracks)).toBe(true);
+      });
+      expect(screenshotModule.captureScreenshot).not.toHaveBeenCalled();
+    });
+
+    it.runIf(plays)('takes the DOM screenshot after a pick, not a second share', async () => {
+      page(`<button class="buy">Buy</button>`);
+      vi.mocked(pickElement).mockResolvedValue({
+        element: { selector: '.buy', tag: 'button', rect: { x: 0, y: 0, w: 10, h: 10 } },
+        label: 'button “Buy”',
+      });
+      const { ask } = share();
+      mount({ screenshot: 'display' });
+      await userEvent.click(trigger());
+      await vi.waitFor(() => {
+        expect(thumb()?.src).toMatch(/^blob:/);
+      });
+      await userEvent.click(button('Pick element'));
+      await vi.waitFor(() => {
+        expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
+      });
+      expect(ask).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('pasted or dropped', () => {
+    async function imageFile(color: string, type = 'image/png'): Promise<File> {
+      const canvas = document.createElement('canvas');
+      canvas.width = 30;
+      canvas.height = 20;
+      const paint = canvas.getContext('2d');
+      if (!paint) throw new Error('no 2d context');
+      paint.fillStyle = color;
+      paint.fillRect(0, 0, 30, 20);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, type);
+      });
+      if (!blob) throw new Error('not encoded');
+      return new File([blob], `photo.${type.slice(6)}`, { type: blob.type });
+    }
+    function transfer(file: File, text?: string): DataTransfer {
+      const data = new DataTransfer();
+      data.items.add(file);
+      if (text) data.setData('text/plain', text);
+      return data;
+    }
+    const textarea = (): HTMLTextAreaElement => {
+      const found = shadow().querySelector('textarea');
+      if (!found) throw new Error('no textarea');
+      return found;
+    };
+    /** False if the widget took it (prevented the default). */
+    function paste(data: DataTransfer): boolean {
+      const event = new ClipboardEvent('paste', {
+        clipboardData: data,
+        bubbles: true,
+        cancelable: true,
+      });
+      // Set directly: Firefox makes its own copy of a clipboardData passed to
+      // the constructor, without the files.
+      Object.defineProperty(event, 'clipboardData', { value: data });
+      return textarea().dispatchEvent(event);
+    }
+    function drag(type: 'dragover' | 'drop', data: DataTransfer): boolean {
+      return textarea().dispatchEvent(
+        new DragEvent(type, { dataTransfer: data, bubbles: true, cancelable: true }),
+      );
+    }
+    async function opened(options: FieldNotesOptions = {}): Promise<void> {
+      page(`<p>The page</p>`);
+      await mount(options).open();
+      if (options.screenshot !== 'off') {
+        await vi.waitFor(() => {
+          expect(thumb()?.src).toMatch(/^blob:/);
+        });
+      }
+    }
+    async function attached(): Promise<string> {
+      const before = thumb()?.src;
+      await vi.waitFor(() => {
+        expect(thumb()?.src).toMatch(/^blob:/);
+        expect(thumb()?.src).not.toBe(before);
+      });
+      return thumb()?.src ?? '';
+    }
+
+    it('takes the screenshot’s place when pasted, encoded again as image.png', async () => {
+      await opened();
+      expect(paste(transfer(await imageFile('rgb(0, 0, 255)', 'image/jpeg')))).toBe(false);
+      await attached();
+      const { note, attachments } = await submitted();
+      expect(note.screenshot).toBe('image.png');
+      expect(Object.keys(attachments)).toEqual(['image.png']);
+      const blob = attachments['image.png'];
+      if (!blob) throw new Error('no image attached');
+      const bitmap = await createImageBitmap(blob);
+      expect([bitmap.width, bitmap.height]).toEqual([30, 20]);
+    });
+
+    it('leaves a paste that has text too to the textarea', async () => {
+      await opened();
+      expect(paste(transfer(await imageFile('blue'), 'Some text'))).toBe(true);
+      const { note } = await submitted();
+      expect(note.screenshot).toBe('screenshot.png');
+    });
+
+    it('takes a dropped image, and ignores a dropped file that isn’t one', async () => {
+      await opened();
+      const text = transfer(new File(['hello'], 'notes.txt', { type: 'text/plain' }));
+      expect(drag('dragover', text)).toBe(false);
+      expect(drag('drop', text)).toBe(false);
+      const image = transfer(await imageFile('green'));
+      expect(drag('dragover', image)).toBe(false);
+      expect(drag('drop', image)).toBe(false);
+      await attached();
+      const { note } = await submitted();
+      expect(note.screenshot).toBe('image.png');
+    });
+
+    it("says so, and keeps the screenshot, when the image can't be read", async () => {
+      await opened();
+      paste(transfer(new File(['not a png'], 'broken.png', { type: 'image/png' })));
+      await vi.waitFor(() => {
+        expect(shadow().querySelector('.error')?.textContent).toBe("Couldn't use that image.");
+      });
+      const { note } = await submitted();
+      expect(note.screenshot).toBe('screenshot.png');
+    });
+
+    it("takes none when screenshots are off, and doesn't stand in the way", async () => {
+      await opened({ screenshot: 'off' });
+      const image = transfer(await imageFile('blue'));
+      expect(paste(image)).toBe(true);
+      expect(drag('dragover', image)).toBe(true);
+      expect(thumb()).toBeNull();
+      const { note } = await submitted();
+      expect(note).not.toHaveProperty('screenshot');
+    });
   });
 });

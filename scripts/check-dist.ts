@@ -54,6 +54,9 @@ const syncFile = files.find((file) => /^sync-.*\.js$/.test(file));
 const exportFile = files.find((file) => /^export-.*\.js$/.test(file));
 const pickerFile = files.find((file) => /^picker-.*\.js$/.test(file));
 const screenshotFile = files.find((file) => /^screenshot-.*\.js$/.test(file));
+const displayFile = files.find((file) => /^display-.*\.js$/.test(file));
+// Region Capture's method: only the display capture uses it.
+const DISPLAY = 'cropTo';
 
 /** A chunk and every chunk it imports statically, as one text. */
 function withImports(file: string, seen = new Set<string>()): string {
@@ -158,8 +161,28 @@ await check(
   },
 );
 
+await check(
+  'the display capture is a lazy chunk of the stub, without modern-screenshot or anything else big',
+  () => {
+    assert(displayFile, 'no display chunk');
+    assert(lazyFromStub(displayFile), 'the stub does not lazy-load the display capture');
+    assert(!stub.includes(DISPLAY), 'the display capture is in the stub');
+    const chunk = withImports(displayFile);
+    assert(chunk.includes(DISPLAY), 'the display capture is not in its chunk');
+    for (const [name, found] of [
+      ['modern-screenshot', chunk.includes(SCREENSHOT)],
+      ['Lit', chunk.includes(LIT)],
+      ['Zod', chunk.includes(ZOD)],
+      ['yaml or fflate', YAML.test(chunk) || chunk.includes(FFLATE)],
+    ] as const) {
+      assert(!found, `${name} is in the display chunks`);
+    }
+  },
+);
+
 await check('the script-tag build has the screenshot inlined (local mode takes them too)', () => {
   assert(iife.includes(SCREENSHOT), 'modern-screenshot is not in the script-tag build');
+  assert(iife.includes(DISPLAY), 'the display capture is not in the script-tag build');
 });
 
 await check('the script-tag build has the element picker inlined (local mode picks too)', () => {
@@ -325,6 +348,10 @@ await check(
         );
       await open();
       assert(screenshotChunk(), 'opening the widget did not load the screenshot chunk');
+      assert(
+        !requested.some((path) => /\/display-[^/]*\.js$/.test(path)),
+        'the display chunk loaded for a DOM screenshot',
+      );
       await page.locator('.shot img[src^="blob:"]').waitFor();
       await page.locator('#field-notes-text').fill('Exported from a production build');
       await page.keyboard.press('Control+Enter');
@@ -400,6 +427,126 @@ await check(
     }
   },
 );
+
+// A real share of the tab. CI only: elsewhere the browser may ask the OS for
+// screen recording, and the share must never reach for a real screen.
+const DISPLAY_E2E =
+  "a consumer's production build in display mode shares this tab, masked and without the widget, on a tall page and a short one";
+if (process.env.CI) {
+  await check(DISPLAY_E2E, async () => {
+    const chunks = await consumerBuild(
+      `import { mountFieldNotes } from 'field-notes';\nwindow.fieldNotes = mountFieldNotes({ enabled: true, mode: 'export', screenshot: 'display' });`,
+    );
+    const entry = chunks.find((chunk) => chunk.isEntry);
+    assert(entry, 'no entry chunk');
+    // Full Chromium: the headless shell can't share a tab. The flag accepts
+    // the browser's "share this tab" prompt, and nothing else.
+    const browser = await chromium.launch({
+      channel: 'chromium',
+      args: ['--auto-accept-this-tab-capture'],
+    });
+    // The widget is themed red like the masked field, so neither may show.
+    const red = 'rgb(255,0,0)';
+    const pages = {
+      'a tall page, scrolled, with a fixed field': `<body style="margin:0;height:3000px;background:rgb(0,0,255)"><input type="password" value="secret" style="position:fixed;top:40px;left:40px;width:120px;height:30px;border:0;background:${red};color:${red}">`,
+      'a page shorter than the window, with the field near the top': `<body style="margin:0;background:rgb(0,0,255)"><input type="password" value="secret" style="display:block;margin:20px;width:120px;height:30px;border:0;background:${red};color:${red}">`,
+    };
+    try {
+      for (const [name, body] of Object.entries(pages)) {
+        const page = await browser.newPage({ viewport: { width: 400, height: 300 } });
+        // A secure origin: there's no screen sharing without one.
+        const origin = 'https://field-notes.test';
+        const requested: string[] = [];
+        await page.route(`${origin}/**`, async (route) => {
+          const path = new URL(route.request().url()).pathname;
+          if (path === '/') {
+            await route.fulfill({
+              contentType: 'text/html',
+              body: `<!doctype html><style>field-notes { --field-notes-bg: ${red}; --field-notes-button-bg: ${red}; --field-notes-button-fg: ${red}; }</style>${body}<script type="module" src="/${entry.fileName}"></script>`,
+            });
+            return;
+          }
+          requested.push(path);
+          const chunk = chunks.find((c) => `/${c.fileName}` === path);
+          await route.fulfill(
+            chunk ? { contentType: 'text/javascript', body: chunk.code } : { status: 404 },
+          );
+        });
+        const errors: string[] = [];
+        page.on('pageerror', (error) => errors.push(error.message));
+        await page.goto(`${origin}/`);
+        await page.waitForFunction(() => 'fieldNotes' in window);
+        await page.evaluate(() => {
+          scrollTo(0, 500);
+        });
+        // A click: sharing needs a user gesture.
+        await page.locator('field-notes .trigger').click();
+        await page
+          .locator('.shot img[src^="blob:"]')
+          .waitFor({ timeout: 10_000 })
+          .catch((error: unknown) => {
+            throw new Error(`${name}: no screenshot. ${String(error)}`);
+          });
+        assert(
+          requested.some((path) => /\/display-[^/]*\.js$/.test(path)),
+          `${name}: the display chunk did not load`,
+        );
+        assert(
+          !requested.some((path) => /\/screenshot-[^/]*\.js$/.test(path)),
+          `${name}: the DOM screenshot was taken instead of the share`,
+        );
+        const shot = await page.evaluate(async () => {
+          const img = document.querySelector('field-notes')?.shadowRoot?.querySelector('.shot img');
+          if (!(img instanceof HTMLImageElement)) throw new Error('no thumbnail');
+          const bitmap = await createImageBitmap(await (await fetch(img.src)).blob());
+          const canvas = document.createElement('canvas');
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          const paint = canvas.getContext('2d');
+          if (!paint) throw new Error('no 2d context');
+          paint.drawImage(bitmap, 0, 0);
+          const { data } = paint.getImageData(0, 0, canvas.width, canvas.height);
+          const scale = Math.min(devicePixelRatio, 2);
+          const at = (x: number, y: number): number[] => {
+            const i = (Math.floor(y * scale) * canvas.width + Math.floor(x * scale)) * 4;
+            return [data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0];
+          };
+          let reds = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            if ((data[i] ?? 0) > 150 && (data[i + 1] ?? 0) < 100 && (data[i + 2] ?? 0) < 100) {
+              reds++;
+            }
+          }
+          const field = document.querySelector('input')?.getBoundingClientRect();
+          if (!field) throw new Error('no field');
+          const { clientWidth, clientHeight } = document.documentElement;
+          return {
+            reds,
+            field: at(field.x + field.width / 2, field.y + field.height / 2),
+            // Below the field and the widget: the page itself.
+            page: at(clientWidth / 2, clientHeight - 100),
+          };
+        });
+        const blue = ([r = 0, g = 0, b = 0]: number[]): boolean => r < 60 && g < 60 && b > 200;
+        assert(blue(shot.page), `${name}: the page isn't in the shot: ${shot.page.join(',')}`);
+        assert(
+          shot.reds === 0,
+          `${name}: ${String(shot.reds)} red pixels, of the masked field or the widget`,
+        );
+        assert(
+          shot.field.every((value) => Math.abs(value - 136) < 10),
+          `${name}: the masked field isn't painted over where it is: ${shot.field.join(',')}`,
+        );
+        assert(errors.length === 0, `${name}: page errors: ${errors.join('; ')}`);
+        await page.close();
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+} else {
+  console.log(`  - ${DISPLAY_E2E} (CI only)`);
+}
 
 await check('script tag and npm import on one page share a single widget', async () => {
   const browser = await chromium.launch();

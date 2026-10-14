@@ -2,51 +2,11 @@
 // the viewport as the user sees it, without the widget, with masked content
 // painted over.
 import { type Context, createContext, destroyContext, domToCanvas } from 'modern-screenshot';
-
-/** Never in a screenshot: passwords, and whatever the page marks. */
-export const MASKED = 'input[type="password"], [data-field-notes-mask]';
-
-/** PNG up to this size; above it, WebP where the browser can encode it. */
-export const WEBP_ABOVE = 1_000_000;
-
-/** Larger than this even so, the shot is taken again at half the size. */
-export const MAX_BYTES = 8_000_000;
+import { type Capture, type Screenshot, encode } from './image.ts';
+import { MASKED, maskRects, paintMasks } from './mask.ts';
 
 /** Fonts and images the copy fetches give up after this long. */
 const FETCH_TIMEOUT_MS = 3000;
-
-/** What masked areas are painted with. */
-const MASK_FILL = '#888';
-
-export interface Screenshot {
-  readonly blob: Blob;
-  /** `screenshot.png` or `screenshot.webp`. */
-  readonly name: string;
-}
-
-export interface Capture {
-  /** Settles once the page is copied: whatever covers it after that isn't in the shot. */
-  readonly cloned: Promise<void>;
-  /** The image; undefined if it failed (with a warning) or was cancelled. */
-  readonly image: Promise<Screenshot | undefined>;
-  readonly cancel: () => void;
-}
-
-/** Every masked element, in the document and in open shadow roots. */
-function masked(root: Document | ShadowRoot, found: Element[] = []): Element[] {
-  found.push(...root.querySelectorAll(MASKED));
-  for (const el of root.querySelectorAll('*')) if (el.shadowRoot) masked(el.shadowRoot, found);
-  return found;
-}
-
-/** Where masked content is on screen: each element's box, and its overflowing content. */
-function maskRects(): DOMRect[] {
-  return masked(document).flatMap((el) => {
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    return [el.getBoundingClientRect(), range.getBoundingClientRect()];
-  });
-}
 
 const isElement = (node: Node): node is Element => node.nodeType === Node.ELEMENT_NODE;
 
@@ -83,36 +43,6 @@ function pageBackground(): string {
     if (!isTransparent(color)) return color;
   }
   return 'Canvas';
-}
-
-function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
-  return new Promise((resolve) => {
-    canvas.toBlob(resolve, type, quality);
-  });
-}
-
-function halve(canvas: HTMLCanvasElement): HTMLCanvasElement {
-  const half = document.createElement('canvas');
-  half.width = Math.max(1, Math.floor(canvas.width / 2));
-  half.height = Math.max(1, Math.floor(canvas.height / 2));
-  half.getContext('2d')?.drawImage(canvas, 0, 0, half.width, half.height);
-  return half;
-}
-
-/** PNG; WebP when the PNG is large and WebP is smaller; halved until it's under `MAX_BYTES`. */
-export async function encode(canvas: HTMLCanvasElement): Promise<Screenshot | undefined> {
-  for (let tries = 0; tries < 3; tries++, canvas = halve(canvas)) {
-    let blob = await toBlob(canvas, 'image/png');
-    if (!blob || blob.size > WEBP_ABOVE) {
-      // A browser that can't encode WebP hands back a PNG instead.
-      const webp = await toBlob(canvas, 'image/webp', 0.85);
-      if (webp?.type === 'image/webp' && webp.size < (blob?.size ?? Infinity)) blob = webp;
-    }
-    if (blob && blob.size <= MAX_BYTES) {
-      return { blob, name: blob.type === 'image/webp' ? 'screenshot.webp' : 'screenshot.png' };
-    }
-  }
-  return undefined;
 }
 
 /**
@@ -177,15 +107,7 @@ export function captureScreenshot(exclude: Element): Capture {
     if (stopped()) return undefined;
     Object.assign(made, { node: root, width, height });
     const canvas = await domToCanvas(made);
-    const paint = canvas.getContext('2d');
-    if (!paint) return undefined;
-    paint.fillStyle = MASK_FILL;
-    // Whole device pixels: a partly covered one would show a blend.
-    for (const { left, top, right, bottom } of rects) {
-      const x = Math.floor(left * scale);
-      const y = Math.floor(top * scale);
-      paint.fillRect(x, y, Math.ceil(right * scale) - x, Math.ceil(bottom * scale) - y);
-    }
+    if (!paintMasks(canvas, rects, scale)) return undefined;
     return stopped() ? undefined : encode(canvas);
   };
 
