@@ -1,5 +1,5 @@
-import { readFile, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { NoteStatus } from '@field-notes/core';
 import {
@@ -20,6 +20,7 @@ import {
   parseFilters,
   showText,
 } from './list.ts';
+import { FORMATS, type Format, digest } from './export.ts';
 import { type Backlog, type Item, findNote, readBacklog } from './notes.ts';
 import { serve } from './serve.ts';
 import { PRUNABLE, prune, resolutionOf, setStatus } from './status.ts';
@@ -67,6 +68,15 @@ Commands:
   show <id>
            Show a note: its id, or the start of it
            --json        Print JSON
+           --dir <path>  Where notes are (default .field-notes)
+  export   Print one digest of notes, for a meeting, a doc or a spreadsheet
+           --format <f>  md (default), json or csv
+           --group-by <g>
+                         Group by route (default), type or author
+           --out <file>  Write it to this file; screenshot paths are then
+                         relative to it, not to the current directory
+           --status, --type, --author, --route, --since
+                         As for list
            --dir <path>  Where notes are (default .field-notes)
   resolve <id...>
            Mark notes resolved
@@ -119,6 +129,8 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
         ref: { type: 'string' },
         'older-than': { type: 'string' },
         'dry-run': { type: 'boolean' },
+        format: { type: 'string' },
+        out: { type: 'string' },
       },
     });
   } catch (error) {
@@ -191,6 +203,50 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
       io.stdout(`${JSON.stringify(ordered.map(jsonItem), null, 2)}\n`);
     } else if (items.length) io.stdout(listText(items, group));
     else io.stderr('No notes match.\n');
+    return 0;
+  }
+  if (command === 'export') {
+    if (positionals.length > 1) {
+      io.stderr(`export takes no arguments\n\n${USAGE}`);
+      return 2;
+    }
+    const filters = parseFilters(values, (io.now ?? Date.now)());
+    if (!filters.ok) {
+      io.stderr(`${filters.error}\n`);
+      return 2;
+    }
+    const format = values.format ?? 'md';
+    if (!isFormat(format)) {
+      io.stderr(`--format must be ${FORMATS.join(', ')}, not ${JSON.stringify(format)}\n`);
+      return 2;
+    }
+    const group = values['group-by'] ?? 'route';
+    if (!isGroup(group)) {
+      io.stderr(`--group-by must be ${GROUPS.join(', ')}, not ${JSON.stringify(group)}\n`);
+      return 2;
+    }
+    const backlog = await load(values.dir ?? '.field-notes', io);
+    if (!backlog) return 1;
+    const items = backlog.items.filter((item) => matches(item.note, filters.value));
+    const { out } = values;
+    const text = digest(items, {
+      format,
+      group,
+      statuses: filters.value.statuses,
+      base: out === undefined ? resolve() : dirname(resolve(out)),
+    });
+    if (!items.length) io.stderr('No notes match.\n');
+    if (out === undefined) {
+      io.stdout(text);
+      return 0;
+    }
+    try {
+      await writeFile(out, text);
+    } catch (error) {
+      io.stderr(`Couldn't write ${out}: ${(error as Error).message}\n`);
+      return 1;
+    }
+    io.stderr(`Wrote ${plural(items.length, 'note')} to ${out}\n`);
     return 0;
   }
   if (command === 'show') {
@@ -350,6 +406,7 @@ const OPTIONS: Readonly<Record<string, readonly string[]>> = {
   import: ['dir'],
   list: ['status', 'type', 'author', 'route', 'since', 'group-by', 'json', 'dir'],
   show: ['json', 'dir'],
+  export: ['status', 'type', 'author', 'route', 'since', 'group-by', 'format', 'out', 'dir'],
   resolve: ['note', 'ref', 'dir'],
   wontfix: ['note', 'ref', 'dir'],
   reopen: ['dir'],
@@ -357,6 +414,7 @@ const OPTIONS: Readonly<Record<string, readonly string[]>> = {
 };
 
 const isGroup = (value: string): value is Group => (GROUPS as readonly string[]).includes(value);
+const isFormat = (value: string): value is Format => (FORMATS as readonly string[]).includes(value);
 
 /** Reads the backlog, reporting on stderr each directory that isn't a note. */
 async function load(dir: string, io: CliIo): Promise<Backlog | undefined> {

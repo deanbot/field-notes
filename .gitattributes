@@ -1,0 +1,2 @@
+# Golden files are compared byte for byte: the CSV has CRLF line breaks
+packages/cli/src/__golden__/** -text

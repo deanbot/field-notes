@@ -56,6 +56,29 @@ The CLI reads only `items/*/note.md`, and finds notes by the `id` in `note.md`, 
 - Symlinked directories aren't followed.
 - If `items/` doesn't exist, there are no notes, and that isn't an error.
 
+## Digests
+
+```
+field-notes export [filters] [--format md|json|csv] [--group-by route|type|author] [--out <file>]
+```
+
+`export` prints one digest of the notes, for a meeting, a doc or a spreadsheet. It takes the same [filters](#filters) as `list`, so it covers open notes unless `--status` says otherwise. Notes are grouped by route unless `--group-by` says otherwise, and groups and notes are in the same order as in `list --group-by`.
+
+- **`--format md`** (the default) gives each group a heading, and each note its first line as a heading, its fields as a list, its body as a quote, and a link to its screenshot.
+- **`--format csv`** gives one row per note, in group order, with a column per field and the body last. It starts with a byte order mark, so Excel reads it as UTF-8, and uses CRLF line breaks.
+- **`--format json`** prints `{ "groupBy": "route", "groups": [{ "value": "/checkout", "notes": [...] }] }`. Each note is in the [`--json` shape](#--json), and `value` is `null` for notes without the field. This is stable as `--json` is.
+- **`--out <file>`** writes the digest to a file instead of printing it. Screenshot paths in markdown and CSV are relative to the directory the digest is in: the current directory without `--out`, so print it from where you'll keep it, or use `--out`.
+
+Screenshots are linked, never embedded. Most trackers and docs don't show embedded images, and a link keeps a screenshot that may show private data out of the digest's own text. To paste a digest into a ticket, attach the screenshots it links.
+
+Digests are made to be pasted where they're rendered, so the notes' text stays text:
+
+- **Markdown:** fields are escaped, and the body is quoted. Outside code, `<`, `[` and backticks that don't pair up are escaped. Code spans and fenced code blocks are kept as written, inside delimiters `export` chooses, so where code ends can't be faked. A note can't add HTML or images, hide where a link goes, or put anything outside its quote. Control characters are dropped, as in `list`.
+  - The body is still markdown inside its quote, so a `# line` is a heading there.
+  - A bare URL in the body still becomes a link where the renderer links bare URLs, as GitHub does.
+  - On GitHub, an `@name` in the body mentions that person or team, and a `#123` links that issue. Check a digest for these before posting it there.
+- **CSV:** a cell starting with `=`, `+`, `-`, `@` or a tab gets a `'` first, so a spreadsheet shows it rather than running it as a formula. A body starting with `- item` is shown as `'- item`.
+
 ## Changing notes
 
 ```
@@ -77,8 +100,8 @@ field-notes prune --older-than 30d [--status resolved|wontfix] [--dry-run]
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                      |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 0    | Done. That includes `list` finding no notes, which it reports on stderr.                                                     |
-| 1    | It couldn't be done: the notes directory can't be read, an id fits no single note, or a note couldn't be changed or deleted. |
-| 2    | The command line is wrong: an unknown command or option, an option the command doesn't take, or a bad value.                 |
+| Code | Meaning                                                                                                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | Done. That includes `list` finding no notes, which it reports on stderr.                                                                                     |
+| 1    | It couldn't be done: the notes directory can't be read, an id fits no single note, a note couldn't be changed or deleted, or the digest couldn't be written. |
+| 2    | The command line is wrong: an unknown command or option, an option the command doesn't take, or a bad value.                                                 |
