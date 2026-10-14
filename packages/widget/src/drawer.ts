@@ -2,6 +2,7 @@
 // Pending notes can be edited or deleted; delivered ones are listed as sent.
 // In export mode it also exports them, and offers the last export again.
 import { html, type TemplateResult } from 'lit/html.js';
+import { MAX_AUTHOR, loadAuthor, saveAuthor } from './author.ts';
 import type { LoadExport } from './mount.ts';
 import { type Outbox, type OutboxEntry, isSending } from './outbox.ts';
 
@@ -13,6 +14,8 @@ export interface Exporting {
   readonly retention: number;
   /** Suggest an export at this many unexported notes, or this many bytes. */
   readonly warnAt: { readonly notes: number; readonly bytes: number };
+  /** Notes are signed with the name kept in this browser: there's no `author` option. */
+  readonly signs: boolean;
 }
 
 export interface DrawerDeps {
@@ -60,6 +63,8 @@ export function createDrawer(deps: DrawerDeps): Drawer {
   let editing: Editing | undefined;
   let error = '';
   let busy = false;
+  /** The name being changed, if it is. */
+  let renaming: string | undefined;
 
   const load = async (): Promise<void> => {
     try {
@@ -212,6 +217,62 @@ export function createDrawer(deps: DrawerDeps): Drawer {
     "Couldn't download the last export.",
   );
 
+  const rename = (value: string | undefined): void => {
+    renaming = value;
+    error = '';
+    deps.redraw();
+  };
+  const signature = (): TemplateResult => {
+    if (renaming !== undefined) {
+      return html`<label class="label" for="field-notes-rename">Your name</label>
+        <input
+          id="field-notes-rename"
+          type="text"
+          autocomplete="name"
+          maxlength=${MAX_AUTHOR}
+          .value=${renaming}
+          @input=${(event: Event) => {
+            renaming = (event.target as HTMLInputElement).value;
+          }}
+        />
+        <p class="meta">New notes are signed with it. Leave it blank to be asked again.</p>
+        <div class="actions">
+          <button
+            type="button"
+            class="link"
+            @click=${() => {
+              rename(undefined);
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="primary"
+            @click=${() => {
+              saveAuthor(renaming ?? '');
+              rename(undefined);
+            }}
+          >
+            Save name
+          </button>
+        </div>`;
+    }
+    const name = loadAuthor();
+    return html`<div class="actions">
+      <p class="meta signed">${name ? `Signed as ${name}` : 'Not signed'}</p>
+      <button
+        type="button"
+        class="link"
+        @click=${() => {
+          rename(name ?? '');
+        }}
+      >
+        ${name ? 'Change name' : 'Add your name'}
+      </button>
+    </div>`;
+  };
+
   const exportBar = (settings: Exporting, all: readonly OutboxEntry[]): TemplateResult => {
     const unexported = all.filter((entry) => entry.state === 'pending');
     const bytes = unexported.reduce((sum, entry) => sum + size(entry), 0);
@@ -219,7 +280,8 @@ export function createDrawer(deps: DrawerDeps): Drawer {
     // Checked here too: a purge may not have run since it expired.
     const offerAgain = last !== undefined && Date.now() - last < settings.retention;
     const count = unexported.length;
-    return html`<p class="meta">
+    return html`${settings.signs ? signature() : ''}
+      <p class="meta">
         ${
           count
             ? `${String(count)} ${count === 1 ? 'note' : 'notes'} not yet exported, stored only in this browser.`

@@ -1,6 +1,7 @@
 // Export mode end to end: submit → outbox → "My notes" → Export → a zip that
 // core's readBundle accepts. Nothing goes over the network.
 import { readBundle } from '@field-notes/core';
+import axe from 'axe-core';
 import { userEvent } from 'vitest/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TAG_NAME } from './element.ts';
@@ -279,3 +280,165 @@ function outboxView(): ReturnType<typeof createOutbox> {
   controllers.push(controller);
   return createOutbox(controller.signal);
 }
+
+describe('the author', () => {
+  const nameField = (): HTMLInputElement | null =>
+    shadow().querySelector<HTMLInputElement>('#field-notes-author');
+  /** Submits a note, typing `name` in the name field first if given. */
+  async function submitAs(body: string, name?: string): Promise<void> {
+    await handle?.open();
+    if (name !== undefined) {
+      const field = nameField();
+      if (!field) throw new Error('no name field');
+      await userEvent.type(field, name);
+    }
+    await submit(body);
+  }
+  /** Each note's author, oldest first. */
+  const authors = async (): Promise<(string | undefined)[]> =>
+    (await outboxView().list()).map((entry) => entry.note.author);
+  async function openFormWith(field: boolean): Promise<void> {
+    await handle?.open();
+    await vi.waitFor(() => {
+      expect(query('#field-notes-text')).not.toBeNull();
+    });
+    expect(nameField() !== null).toBe(field);
+    handle?.close();
+  }
+
+  it('is asked for on the first note, then remembered, across a reload, and exported', async () => {
+    mount();
+    await openFormWith(true);
+    await submitAs('first', '  Ada Lovelace  ');
+    await openFormWith(false);
+    await submit('second');
+    handle?.unmount();
+    mount();
+    await openFormWith(false);
+    await submit('after a reload');
+    expect(await authors()).toEqual(['Ada Lovelace', 'Ada Lovelace', 'Ada Lovelace']);
+    await openNotes();
+    expect(text('.signed')).toBe('Signed as Ada Lovelace');
+    const read = readBundle((await exportAll()).bytes);
+    if (!read.ok) throw read.error;
+    expect(read.value.map((item) => item.note.author)).toEqual([
+      'Ada Lovelace',
+      'Ada Lovelace',
+      'Ada Lovelace',
+    ]);
+  });
+
+  it('is optional: a note goes without one, and the next one asks again', async () => {
+    mount();
+    await submitAs('anonymous');
+    await openFormWith(true);
+    expect(await authors()).toEqual([undefined]);
+  });
+
+  it('is changed in My notes for new notes only, and asked for again once cleared', async () => {
+    mount();
+    await submitAs('before', 'Ada');
+    await openNotes();
+    button('Change name')?.click();
+    const field = await vi.waitFor(() => {
+      const found = shadow().querySelector<HTMLInputElement>('#field-notes-rename');
+      if (!found) throw new Error('no rename field');
+      return found;
+    });
+    expect(field.value).toBe('Ada');
+    await userEvent.clear(field);
+    await userEvent.type(field, 'Grace');
+    button('Save name')?.click();
+    await vi.waitFor(() => {
+      expect(text('.signed')).toBe('Signed as Grace');
+    });
+    handle?.close();
+    await submit('after');
+    expect(await authors()).toEqual(['Ada', 'Grace']);
+    await openNotes();
+    button('Change name')?.click();
+    await vi.waitFor(() => {
+      expect(shadow().querySelector('#field-notes-rename')).not.toBeNull();
+    });
+    const rename = shadow().querySelector<HTMLInputElement>('#field-notes-rename');
+    if (!rename) throw new Error('no rename field');
+    await userEvent.clear(rename);
+    button('Save name')?.click();
+    await vi.waitFor(() => {
+      expect(text('.signed')).toBe('Not signed');
+    });
+    expect(button('Add your name')).toBeDefined();
+    handle?.close();
+    await openFormWith(true);
+  });
+
+  it.each([
+    ['a string', 'Host name', 'Host name'],
+    ['a function', () => 'From a function', 'From a function'],
+    [
+      'a function that throws',
+      () => {
+        throw new Error('no user');
+      },
+      undefined,
+    ],
+  ])('is never asked for when the host gives one: %s', async (_, author, expected) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    localStorage.setItem('field-notes:author', 'Remembered');
+    mount({ author });
+    await openFormWith(false);
+    await submit('note');
+    expect(await authors()).toEqual([expected]);
+    await openNotes();
+    expect(query('.signed')).toBeNull();
+    expect(button('Change name')).toBeUndefined();
+  });
+
+  it("isn't asked for, or taken from this browser, in local mode", async () => {
+    localStorage.setItem('field-notes:author', 'Remembered');
+    handle = mountFieldNotes({ enabled: true, screenshot: 'off' });
+    await openFormWith(false);
+    await submit('local');
+    expect(await authors()).toEqual([undefined]);
+  });
+
+  it.each([
+    [
+      'its methods throw',
+      () => {
+        for (const method of ['getItem', 'setItem', 'removeItem'] as const) {
+          vi.spyOn(Storage.prototype, method).mockImplementation(() => {
+            throw new DOMException('blocked', 'SecurityError');
+          });
+        }
+      },
+    ],
+    [
+      "it can't be reached",
+      () => {
+        vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+          throw new DOMException('blocked', 'SecurityError');
+        });
+      },
+    ],
+  ])(
+    "doesn't stop a note when storage fails (%s): what's typed signs that note only",
+    async (_, block) => {
+      block();
+      mount();
+      await submitAs('typed', 'Ada');
+      await submitAs('not typed');
+      await openFormWith(true);
+      vi.restoreAllMocks();
+      expect(await authors()).toEqual(['Ada', undefined]);
+    },
+  );
+
+  it('is asked for accessibly', async () => {
+    mount();
+    await openFormWith(true);
+    await handle?.open();
+    const results = await axe.run(shadow().host);
+    expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
+  });
+});

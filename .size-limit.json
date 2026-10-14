@@ -12,7 +12,7 @@
       "packages/field-notes/dist/outbox-*.js",
       "packages/field-notes/dist/schema-*.js"
     ],
-    "limit": "21.5 kB",
+    "limit": "22 kB",
     "gzip": true
   },
   {
