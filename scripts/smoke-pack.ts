@@ -141,6 +141,38 @@ try {
     assert(!result.placeholder, 'the token was not filled in');
   });
 
+  check('bin tail exits cleanly when its reader stops reading', () => {
+    // As `field-notes tail --json | head -1`: the next note it writes finds
+    // the pipe closed, which ends it with 0, not an EPIPE stack trace.
+    const probe = `
+      import { spawn } from 'node:child_process';
+      import { mkdirSync, writeFileSync } from 'node:fs';
+      const note = (id) => {
+        mkdirSync('.tail-notes/items/' + id, { recursive: true });
+        writeFileSync('.tail-notes/items/' + id + '/note.md',
+          '---\\nid: ' + id + '\\nschema: 1\\nstatus: open\\ncreated: ' + new Date().toISOString() + '\\n---\\nHi\\n');
+      };
+      note('A');
+      const tail = spawn(${JSON.stringify(join(consumer, 'node_modules/.bin/field-notes'))},
+        ['tail', '--json', '--since', '1d', '--dir', '.tail-notes'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let err = '';
+      tail.stderr.on('data', (chunk) => { err += chunk; });
+      const timer = setTimeout(() => tail.kill('SIGKILL'), 15000);
+      tail.stdout.once('data', () => {
+        tail.stdout.destroy();
+        note('B');
+      });
+      const code = await new Promise((done) => tail.once('exit', (code) => done(code)));
+      clearTimeout(timer);
+      console.log(JSON.stringify({ code, err }));`;
+    const result = JSON.parse(run('node', ['--input-type=module', '-e', probe], consumer)) as {
+      code: number | null;
+      err: string;
+    };
+    assert(result.code === 0, `tail exited with ${String(result.code)}: ${result.err}`);
+    assert(!result.err.includes('EPIPE'), `tail reported EPIPE: ${result.err}`);
+  });
+
   // Two compiles: the widget's types must not need Node's; the sink is a
   // Node API, so its consumers have them.
   const compile = (name: string, lines: string[], types: string[]): void => {

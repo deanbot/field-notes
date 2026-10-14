@@ -21,6 +21,8 @@ export interface Backlog {
   /** Oldest first: by `created`, then `id`, then directory. */
   readonly items: readonly Item[];
   readonly skipped: readonly Skipped[];
+  /** Names of directories without `note.md` yet: still being written. */
+  readonly pending: readonly string[];
 }
 
 const hasCode = (error: unknown, code: string): boolean =>
@@ -28,26 +30,35 @@ const hasCode = (error: unknown, code: string): boolean =>
 
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Reads every note in `root/items/`. A missing `items/` is an empty backlog. */
-export async function readBacklog(root: string): Promise<Backlog> {
+/**
+ * Reads every note in `root/items/`, but for directories named in `known`.
+ * A missing `items/` is an empty backlog.
+ */
+export async function readBacklog(
+  root: string,
+  known: ReadonlySet<string> = new Set(),
+): Promise<Backlog> {
   const itemsDir = join(root, 'items');
   let entries;
   try {
     entries = await readdir(itemsDir, { withFileTypes: true });
   } catch (error) {
-    if (hasCode(error, 'ENOENT')) return { items: [], skipped: [] };
+    if (hasCode(error, 'ENOENT')) return { items: [], skipped: [], pending: [] };
     throw error;
   }
   const items: Item[] = [];
   const skipped: Skipped[] = [];
+  const pending: string[] = [];
   // Symlinks aren't followed: a note's directory is a real directory.
-  const dirs = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  const dirs = entries
+    .filter((entry) => entry.isDirectory() && !known.has(entry.name))
+    .map((entry) => entry.name);
   await Promise.all(
     dirs.map(async (name) => {
       const dir = join(itemsDir, name);
       const read = await readItem(dir);
-      if (read === undefined) return;
-      if ('reason' in read) skipped.push(read);
+      if (read === undefined) pending.push(name);
+      else if ('reason' in read) skipped.push(read);
       else items.push(read);
     }),
   );
@@ -58,7 +69,7 @@ export async function readBacklog(root: string): Promise<Backlog> {
       compare(a.dir, b.dir),
   );
   skipped.sort((a, b) => compare(a.dir, b.dir));
-  return { items, skipped };
+  return { items, skipped, pending };
 }
 
 /** Undefined for a directory without `note.md`: it's still being written. */

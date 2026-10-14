@@ -11,6 +11,12 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
+// A reader that stops early, as `tail --json | head -1` does, ends the command.
+process.stdout.on('error', (error: NodeJS.ErrnoException) => {
+  if (error.code !== 'EPIPE') throw error;
+  stop.abort();
+});
+
 process.exitCode = await run(process.argv.slice(2), {
   version: pkg.version,
   stdout: (text) => process.stdout.write(text),
