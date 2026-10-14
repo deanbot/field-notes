@@ -1,0 +1,14 @@
+﻿id,status,type,author,created,environment,url,route,title,element,selection,tags,resolution,screenshot,body
+01JA8X3Q7K2M9V5T0N4R6P8W1Y,open,change,Sam Rivera,2026-10-09T18:42:11.204Z,staging,https://app.test/checkout?step=2,/checkout,Checkout · Café,"button[data-test=""pay""]",Place order,"copy, beta",,team notes (q4)/items/01JA8X3Q7K2M9V5T0N4R6P8W1Y/screenshot.png,"The button should say ""Start free trial"".
+
+# Not a heading of the digest
+---
+<img src=""https://tracker.test/pixel.png"">
+![pixel](https://tracker.test/pixel.png) and [click](javascript:alert(1))
+Résumé ✓, \<b> stays text"
+01JA8X4B,open,Bug,"'=HYPERLINK(""https://evil.test"",""x"")",2026-10-10T09:00:00.000Z,,,/checkout,Totals | *wrong* <b>,span`total`,,,,screenshot.webp (not in the note's directory),"'- the total is off
+- by ""one"", maybe"
+01JA8X5C,open,,,2026-10-11T10:30:00.000Z,,,,,,,,,,"'@everyone, no route, no type.
+
+Second paragraph."
+01JA8X6D,open,change,,2026-10-12T08:00:00.000Z,,,/settings,,,,,,,

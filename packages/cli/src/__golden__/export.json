@@ -1,0 +1,89 @@
+{
+  "groupBy": "route",
+  "groups": [
+    {
+      "value": "/checkout",
+      "notes": [
+        {
+          "dir": "<root>/team notes (q4)/items/01JA8X3Q7K2M9V5T0N4R6P8W1Y",
+          "screenshot": "<root>/team notes (q4)/items/01JA8X3Q7K2M9V5T0N4R6P8W1Y/screenshot.png",
+          "note": {
+            "id": "01JA8X3Q7K2M9V5T0N4R6P8W1Y",
+            "schema": 1,
+            "status": "open",
+            "created": "2026-10-09T18:42:11.204Z",
+            "type": "change",
+            "author": "Sam Rivera",
+            "environment": "staging",
+            "url": "https://app.test/checkout?step=2",
+            "route": "/checkout",
+            "title": "Checkout · Café",
+            "element": {
+              "selector": "button[data-test=\"pay\"]"
+            },
+            "selection": "Place order",
+            "screenshot": "screenshot.png",
+            "tags": [
+              "copy",
+              "beta"
+            ],
+            "body": "The button should say \"Start free trial\".\n\n# Not a heading of the digest\n---\n<img src=\"https://tracker.test/pixel.png\">\n![pixel](https://tracker.test/pixel.png) and [click](javascript:alert(1))\nRésumé ✓, \\<b> stays text"
+          }
+        },
+        {
+          "dir": "<root>/team notes (q4)/items/01JA8X4B",
+          "screenshot": null,
+          "note": {
+            "id": "01JA8X4B",
+            "schema": 1,
+            "status": "open",
+            "created": "2026-10-10T09:00:00.000Z",
+            "type": "Bug",
+            "author": "=HYPERLINK(\"https://evil.test\",\"x\")",
+            "route": "/checkout",
+            "title": "Totals | *wrong* <b>",
+            "element": {
+              "selector": "span`total`"
+            },
+            "screenshot": "screenshot.webp",
+            "body": "- the total is off\n- by \"one\", maybe"
+          }
+        }
+      ]
+    },
+    {
+      "value": null,
+      "notes": [
+        {
+          "dir": "<root>/team notes (q4)/items/01JA8X5C",
+          "screenshot": null,
+          "note": {
+            "id": "01JA8X5C",
+            "schema": 1,
+            "status": "open",
+            "created": "2026-10-11T10:30:00.000Z",
+            "body": "@everyone, no route, no type.\n\nSecond paragraph."
+          }
+        }
+      ]
+    },
+    {
+      "value": "/settings",
+      "notes": [
+        {
+          "dir": "<root>/team notes (q4)/items/01JA8X6D",
+          "screenshot": null,
+          "note": {
+            "id": "01JA8X6D",
+            "schema": 1,
+            "status": "open",
+            "created": "2026-10-12T08:00:00.000Z",
+            "type": "change",
+            "route": "/settings",
+            "body": ""
+          }
+        }
+      ]
+    }
+  ]
+}

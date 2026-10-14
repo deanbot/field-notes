@@ -120,7 +120,7 @@ export interface JsonItem {
 }
 
 /** The screenshot's absolute path, or null when there's none or it isn't there. */
-function screenshotPath(item: Item): string | null {
+export function screenshotPath(item: Item): string | null {
   const { screenshot } = item.note;
   if (!screenshot) return null;
   // The schema allows only a plain file name, so this stays in the note's directory.
@@ -143,14 +143,14 @@ export function clean(text: string): string {
 }
 
 /** One line of text from a note: also no newlines or tabs. */
-function cleanLine(text: string): string {
+export function cleanLine(text: string): string {
   return clean(text).replace(LINE_BREAKS, ' ').trim();
 }
 
 const SUMMARY_MAX = 72;
 
 /** The body's first non-empty line, cut to fit a list row. */
-function summary(note: Note): string {
+export function summary(note: Note): string {
   const line = cleanLine(note.body.split('\n').find((l) => l.trim()) ?? '');
   return line.length > SUMMARY_MAX ? `${line.slice(0, SUMMARY_MAX - 1)}…` : line;
 }
