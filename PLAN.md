@@ -142,7 +142,7 @@ Production builds tree-shake the widget away when it's guarded by `import.meta.e
 
 A **"My notes" drawer** lists this session's notes, so the author can review, edit or delete them.
 
-**The author in export mode:** with no `author` option, nothing fills it in, so the form asks for a name, optionally, below the note. The name is kept in this browser's `localStorage` and signs every note after it. "My notes" shows it and changes it; a change signs new notes only, and a blank one is asked for again. When storage fails, a typed name signs only that note, and the next one asks again. An `author` option (even a function that throws) always wins, and local mode never uses the kept name: the sink fills in `git config user.name`.
+**The author in export mode:** with no `author` option, nothing fills it in, so the form asks for a name, optionally, below the note, once. The name, or that it was skipped, is kept in this browser's `localStorage`, and the name signs every note after it. "My notes" shows it, adds it or changes it; a change signs new notes only, and clearing it there means the next note asks again. When storage fails, a typed name signs only that note, and the next one asks again. An `author` option (even a function that throws) always wins, and local mode never uses the kept name: the sink fills in `git config user.name`.
 
 ### Metadata captured automatically
 

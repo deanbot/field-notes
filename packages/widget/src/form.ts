@@ -2,7 +2,15 @@
 // chunk. State and submit logic live here; the template is a thin view of it.
 import type { Note } from '@field-notes/core/note';
 import { html, nothing, type TemplateResult } from 'lit/html.js';
-import { MAX_AUTHOR, asksAuthor, cleanAuthor, loadAuthor, saveAuthor } from './author.ts';
+import {
+  MAX_AUTHOR,
+  asksAuthor,
+  authorAsked,
+  cleanAuthor,
+  loadAuthor,
+  saveAuthor,
+  skipAuthor,
+} from './author.ts';
 import { awaitContext, buildNote, resolveAuthor, startContext } from './capture.ts';
 import { clearDraft, loadDraft, restoreDraft, saveDraft } from './drafts.ts';
 import type { FieldNotesOptions } from './mount.ts';
@@ -100,7 +108,7 @@ export function createForm(deps: FormDeps): Form {
   let name = '';
   const asks = asksAuthor(options);
   // Read each time: "My notes" can set it while the form is open.
-  const askingName = (): boolean => asks && !loadAuthor();
+  const askingName = (): boolean => asks && !authorAsked();
   // Called now, so a slow callback has the whole time the form is open; the
   // timeout only starts at submit.
   const context = startContext(options.context);
@@ -141,8 +149,10 @@ export function createForm(deps: FormDeps): Form {
     // added twice. Only unmount cancels, and then the text goes back.
     const sent = { text, type };
     // Read now: once it's saved, the field goes.
-    const typed = askingName() ? cleanAuthor(name) : undefined;
+    const asking = askingName();
+    const typed = asking ? cleanAuthor(name) : undefined;
     if (typed) saveAuthor(typed);
+    else if (asking) skipAuthor();
     clearDraft();
     busy = true;
     error = '';
@@ -334,7 +344,7 @@ export function createForm(deps: FormDeps): Form {
                 }}
               />
               <p id="field-notes-author-hint" class="meta">
-                Signs your notes. Kept in this browser; change it in My notes.
+                Asked once, and kept in this browser. Change it in My notes.
               </p>`
           : ''
       }

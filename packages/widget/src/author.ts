@@ -1,5 +1,5 @@
 // Export mode's author: asked for once in the panel and kept in this
-// viewer's localStorage, as nothing else fills it in (in local mode the sink
+// viewer's localStorage (empty once skipped), as nothing else fills it in (in local mode the sink
 // has `git config user.name`). Storage can be missing, full or blocked; then
 // the name just isn't remembered.
 
@@ -24,7 +24,25 @@ export function loadAuthor(): string | undefined {
   }
 }
 
-/** Remembers the name, or forgets it if blank. */
+/** Whether the form has asked: a name was given or skipped. */
+export function authorAsked(): boolean {
+  try {
+    return localStorage.getItem(KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Remembers that the form asked and got no name: it doesn't ask again. */
+export function skipAuthor(): void {
+  try {
+    localStorage.setItem(KEY, '');
+  } catch {
+    // Not remembered; it's asked for again.
+  }
+}
+
+/** Remembers the name, or forgets it if blank, so the form asks again. */
 export function saveAuthor(name: string): void {
   try {
     const clean = cleanAuthor(name);

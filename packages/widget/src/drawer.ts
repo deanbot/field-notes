@@ -235,7 +235,9 @@ export function createDrawer(deps: DrawerDeps): Drawer {
             renaming = (event.target as HTMLInputElement).value;
           }}
         />
-        <p class="meta">New notes are signed with it. Leave it blank to be asked again.</p>
+        <p class="meta">
+          New notes are signed with it. Leave it blank to be asked on the next note.
+        </p>
         <div class="actions">
           <button
             type="button"

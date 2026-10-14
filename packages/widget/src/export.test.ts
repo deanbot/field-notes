@@ -328,14 +328,30 @@ describe('the author', () => {
     ]);
   });
 
-  it('is optional: a note goes without one, and the next one asks again', async () => {
+  it("is optional: a note goes without one, the next one doesn't ask, and My notes adds it", async () => {
     mount();
     await submitAs('anonymous');
-    await openFormWith(true);
-    expect(await authors()).toEqual([undefined]);
+    await openFormWith(false);
+    await submit('still anonymous');
+    await openNotes();
+    expect(text('.signed')).toBe('Not signed');
+    button('Add your name')?.click();
+    const field = await vi.waitFor(() => {
+      const found = shadow().querySelector<HTMLInputElement>('#field-notes-rename');
+      if (!found) throw new Error('no rename field');
+      return found;
+    });
+    await userEvent.type(field, 'Ada');
+    button('Save name')?.click();
+    await vi.waitFor(() => {
+      expect(text('.signed')).toBe('Signed as Ada');
+    });
+    handle?.close();
+    await submit('signed');
+    expect(await authors()).toEqual([undefined, undefined, 'Ada']);
   });
 
-  it('is changed in My notes for new notes only, and asked for again once cleared', async () => {
+  it('is changed in My notes for new notes only, and asked for again once cleared there', async () => {
     mount();
     await submitAs('before', 'Ada');
     await openNotes();
@@ -422,7 +438,7 @@ describe('the author', () => {
       },
     ],
   ])(
-    "doesn't stop a note when storage fails (%s): what's typed signs that note only",
+    "doesn't stop a note when storage fails (%s): what's typed signs that note only, and the next asks again",
     async (_, block) => {
       block();
       mount();
