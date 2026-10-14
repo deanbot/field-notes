@@ -26,6 +26,7 @@ export {
 export type { NoteParseErrorCode, NotePatch, NoteResult } from './note-file.ts';
 export { slugify } from './slug.ts';
 export { ulid } from './id.ts';
+export { DELIVERED_RETENTION_MS } from './delivery.ts';
 export { BundleError, readBundle, writeBundle } from './bundle.ts';
 export type {
   BundleErrorCode,

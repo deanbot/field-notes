@@ -1,4 +1,4 @@
-import { Scalar, parse, parseDocument, stringify, visit } from 'yaml';
+import { isMap, isNode, isScalar, parse, parseDocument, stringify } from 'yaml';
 import { NoteSchema } from './note.ts';
 import type { Note, NoteFrontmatter } from './note.ts';
 import { slugify } from './slug.ts';
@@ -144,7 +144,9 @@ export function parseNote(text: string): NoteResult<Note> {
 
 /**
  * Changes only `status`, `resolution` and `tags`, keeping the rest of the file
- * (comments, field order, unknown fields, the body) as it was.
+ * (comments, formatting, field order, unknown fields, the body) byte for byte:
+ * only those values' text is replaced, and a field the note lacks is added at
+ * the end of the frontmatter.
  */
 export function updateNote(text: string, patch: NotePatch): NoteResult<string> {
   const parts = split(text);
@@ -157,33 +159,51 @@ export function updateNote(text: string, patch: NotePatch): NoteResult<string> {
       error: new NoteParseError('invalid-yaml', `Invalid frontmatter: ${firstError.message}`),
     };
   }
-  for (const key of ['status', 'resolution', 'tags'] as const) {
-    if (patch[key] === undefined) continue;
-    // The document keeps its own (1.2) schema, so quote ambiguous strings explicitly.
-    const node = doc.createNode(patch[key]);
-    visit(node, {
-      Scalar(_, scalar) {
-        if (typeof scalar.value === 'string' && readsAsOtherType(scalar.value)) {
-          scalar.type = Scalar.QUOTE_DOUBLE;
-        }
-      },
-    });
-    doc.set(key, node);
-  }
-  const checked = validate(doc.toJS(), parts.rest.replace(/^\r?\n/, ''));
-  if (!checked.ok) return checked;
   const eol = parts.opening.endsWith('\r\n') ? '\r\n' : '\n';
-  const frontmatter = doc.toString({ lineWidth: 0 }).replace(/\n/g, eol);
-  return { ok: true, value: `${parts.opening}${frontmatter}${parts.closing}${parts.rest}` };
+  const pairs = isMap(doc.contents) ? doc.contents.items : [];
+  const edits: { start: number; end: number; text: string }[] = [];
+  let added = '';
+  for (const key of ['status', 'resolution', 'tags'] as const) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    const pair = pairs.find((item) => isScalar(item.key) && item.key.value === key);
+    const range = isNode(pair?.value) ? pair.value.range : undefined;
+    if (range) {
+      const [start] = range;
+      // A block list's range runs on past its last line break: keep that.
+      const end = start + parts.frontmatter.slice(start, range[1]).trimEnd().length;
+      // An empty value: after `key:` it needs a space before it, and before a
+      // comment one after it, or the `#` would be read as part of the value.
+      const empty = start === end;
+      const before = empty && parts.frontmatter[start - 1] === ':' ? ' ' : '';
+      const next = parts.frontmatter[end] ?? '\n';
+      const after = empty && next !== '\n' && next !== '\r' ? ' ' : '';
+      edits.push({ start, end, text: before + inline(value) + after });
+    } else {
+      added +=
+        eol +
+        stringify({ [key]: value }, YAML_OPTIONS)
+          .trimEnd()
+          .replace(/\n/g, eol);
+    }
+  }
+  let frontmatter = parts.frontmatter;
+  for (const { start, end, text: replacement } of edits.sort((a, b) => b.start - a.start)) {
+    frontmatter = frontmatter.slice(0, start) + replacement + frontmatter.slice(end);
+  }
+  const updated = `${parts.opening}${frontmatter}${added}${eol}${parts.closing}${parts.rest}`;
+  const checked = parseNote(updated);
+  return checked.ok ? { ok: true, value: updated } : checked;
 }
 
-/** Whether a YAML 1.1 parser would read `text`, unquoted, as something other than this string. */
-function readsAsOtherType(text: string): boolean {
-  try {
-    return parse(text, { schema: 'yaml-1.1', logLevel: 'error' }) !== text;
-  } catch {
-    return true;
-  }
+/**
+ * A patch value as YAML on one line, quoted wherever a YAML 1.1 parser would
+ * read it as another type. Lists are written in flow style, every item quoted.
+ */
+function inline(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map((item) => JSON.stringify(item)).join(', ')}]`;
+  if (typeof value === 'string' && /[\r\n]/.test(value)) return JSON.stringify(value);
+  return stringify(value, YAML_OPTIONS).trimEnd();
 }
 
 /** The body's last level-2 heading, ignoring lines inside fenced code blocks. */

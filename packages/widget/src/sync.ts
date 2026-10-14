@@ -1,6 +1,7 @@
 // Delivery: sends the outbox to the local sink, and keeps trying with
 // backoff while the sink is down. A lazy chunk, loaded only when there's
 // something to send.
+import { DELIVERED_RETENTION_MS } from '@field-notes/core';
 import { createLocalTransport } from './local-transport.ts';
 import { createOutbox } from './outbox.ts';
 import { type Transport, TransportError } from './transport.ts';
@@ -24,8 +25,6 @@ export interface Sync {
 /** First retry after a failed send; doubles each time, up to the max. */
 export const RETRY_MIN_MS = 1000;
 export const RETRY_MAX_MS = 60_000;
-/** How long delivered notes stay listed in "My notes". */
-export const DELIVERED_RETENTION_MS: number = 7 * 24 * 60 * 60 * 1000;
 
 const UNREACHABLE = Symbol('unreachable');
 

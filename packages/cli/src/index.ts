@@ -1,7 +1,13 @@
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { MAX_IMPORT_BYTES, importBundle, isOriginPattern } from '@field-notes/sink';
+import type { NoteStatus } from '@field-notes/core';
+import {
+  MAX_IMPORT_BYTES,
+  forgetOldClientIds,
+  importBundle,
+  isOriginPattern,
+} from '@field-notes/sink';
 import {
   GROUPS,
   clean,
@@ -10,11 +16,13 @@ import {
   jsonItem,
   listText,
   matches,
+  parseDuration,
   parseFilters,
   showText,
 } from './list.ts';
-import { type Backlog, findNote, readBacklog } from './notes.ts';
+import { type Backlog, type Item, findNote, readBacklog } from './notes.ts';
 import { serve } from './serve.ts';
+import { PRUNABLE, prune, resolutionOf, setStatus } from './status.ts';
 
 export interface CliIo {
   version: string;
@@ -24,7 +32,7 @@ export interface CliIo {
   widgetScript: () => Promise<string>;
   /** Stops a long-running command (`serve`): Ctrl+C. */
   signal: AbortSignal;
-  /** The time, for `--since`; `Date.now` if not given. */
+  /** The time, for `--since` and `prune`; `Date.now` if not given. */
   now?: () => number;
 }
 
@@ -60,6 +68,25 @@ Commands:
            Show a note: its id, or the start of it
            --json        Print JSON
            --dir <path>  Where notes are (default .field-notes)
+  resolve <id...>
+           Mark notes resolved
+           --note <text> Why: what was done (required)
+           --ref <ref>   A commit, PR or issue it was done in
+           --dir <path>  Where notes are (default .field-notes)
+  wontfix <id...>
+           Mark notes won't fix
+           --note <text> Why not (required)
+           --ref <ref>   Where it was decided
+           --dir <path>  Where notes are (default .field-notes)
+  reopen <id...>
+           Mark notes open again, clearing the resolution
+           --dir <path>  Where notes are (default .field-notes)
+  prune    Delete resolved and won't-fix notes, never open ones
+           --older-than <t>
+                         Unchanged for this long: 30m, 12h, 2d or 1w (required)
+           --status <s>  resolved or wontfix (repeatable; default both)
+           --dry-run     List what would be deleted, deleting nothing
+           --dir <path>  Where notes are (default .field-notes)
 
 Options:
   -h, --help     Show this help
@@ -88,6 +115,10 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
         since: { type: 'string' },
         'group-by': { type: 'string' },
         json: { type: 'boolean' },
+        note: { type: 'string' },
+        ref: { type: 'string' },
+        'older-than': { type: 'string' },
+        'dry-run': { type: 'boolean' },
       },
     });
   } catch (error) {
@@ -170,23 +201,147 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
     }
     const backlog = await load(values.dir ?? '.field-notes', io);
     if (!backlog) return 1;
-    const found = findNote(backlog.items, id);
-    if (!found.ok) {
-      if (!found.matches.length) io.stderr(`No note has the id ${JSON.stringify(id)}.\n`);
-      else {
-        io.stderr(`${JSON.stringify(id)} could be any of these notes:\n`);
-        for (const { note, dir } of found.matches)
-          io.stderr(`  ${clean(note.id)}  ${clean(dir)}\n`);
-      }
-      return 1;
-    }
-    io.stdout(
-      values.json ? `${JSON.stringify(jsonItem(found.item), null, 2)}\n` : showText(found.item),
-    );
+    const [item] = lookup(backlog.items, [id], io) ?? [];
+    if (!item) return 1;
+    io.stdout(values.json ? `${JSON.stringify(jsonItem(item), null, 2)}\n` : showText(item));
     return 0;
+  }
+  if (command === 'resolve' || command === 'wontfix' || command === 'reopen') {
+    const ids = positionals.slice(1);
+    if (!ids.length) {
+      io.stderr(`${command} takes one or more note ids\n\n${USAGE}`);
+      return 2;
+    }
+    let resolution: string | null = null;
+    if (command !== 'reopen') {
+      const note = values.note?.trim();
+      if (!note) {
+        io.stderr(`${command} needs --note, saying why\n`);
+        return 2;
+      }
+      resolution = resolutionOf(note, values.ref?.trim());
+    }
+    const status = STATUS_OF[command];
+    return runStatus(ids, status, resolution, values.dir ?? '.field-notes', io);
+  }
+  if (command === 'prune') {
+    if (positionals.length > 1) {
+      io.stderr(`prune takes no arguments\n\n${USAGE}`);
+      return 2;
+    }
+    const age =
+      values['older-than'] === undefined ? undefined : parseDuration(values['older-than']);
+    if (age === undefined) {
+      io.stderr(`prune needs --older-than, like 30m, 12h, 2d or 1w\n`);
+      return 2;
+    }
+    const statuses = values.status ?? [...PRUNABLE];
+    const bad = statuses.find((s) => !(PRUNABLE as readonly string[]).includes(s));
+    if (bad !== undefined) {
+      io.stderr(
+        `prune never deletes open notes: --status must be resolved or wontfix, not ${JSON.stringify(bad)}\n`,
+      );
+      return 2;
+    }
+    return runPrune(
+      statuses as NoteStatus[],
+      age,
+      values['dry-run'] ?? false,
+      values.dir ?? '.field-notes',
+      io,
+    );
   }
   io.stderr(`Unknown command: ${command}\n\n${USAGE}`);
   return 2;
+}
+
+const STATUS_OF = { resolve: 'resolved', wontfix: 'wontfix', reopen: 'open' } as const;
+const DONE: Record<NoteStatus, string> = {
+  resolved: 'Resolved',
+  wontfix: "Marked won't fix:",
+  open: 'Reopened',
+};
+const ALREADY: Record<NoteStatus, string> = {
+  resolved: 'is already resolved',
+  wontfix: "is already won't fix",
+  open: 'is already open',
+};
+
+/**
+ * The note for each id, or undefined, after saying why on stderr, if any id
+ * fits no note or more than one. A note named twice is listed once.
+ */
+function lookup(items: readonly Item[], ids: readonly string[], io: CliIo): Item[] | undefined {
+  const found = new Map<string, Item>();
+  let failed = false;
+  for (const id of ids) {
+    const match = findNote(items, id);
+    if (match.ok) {
+      found.set(match.item.dir, match.item);
+      continue;
+    }
+    failed = true;
+    if (!match.matches.length) io.stderr(`No note has the id ${JSON.stringify(id)}.\n`);
+    else {
+      io.stderr(`${JSON.stringify(id)} could be any of these notes:\n`);
+      for (const { note, dir } of match.matches) io.stderr(`  ${clean(note.id)}  ${clean(dir)}\n`);
+    }
+  }
+  return failed ? undefined : [...found.values()];
+}
+
+/** Changes every note or, if any id doesn't fit exactly one note, none. */
+async function runStatus(
+  ids: readonly string[],
+  status: NoteStatus,
+  resolution: string | null,
+  dir: string,
+  io: CliIo,
+): Promise<number> {
+  const backlog = await load(dir, io);
+  if (!backlog) return 1;
+  const items = lookup(backlog.items, ids, io);
+  if (!items) {
+    io.stderr('Nothing was changed.\n');
+    return 1;
+  }
+  let code = 0;
+  for (const item of items) {
+    const id = clean(item.note.id);
+    try {
+      if (await setStatus(item, status, resolution)) io.stdout(`${DONE[status]} ${id}\n`);
+      else io.stdout(`${id} ${ALREADY[status]}\n`);
+    } catch (error) {
+      io.stderr(`Couldn't change ${id}: ${clean((error as Error).message)}\n`);
+      code = 1;
+    }
+  }
+  return code;
+}
+
+async function runPrune(
+  statuses: readonly NoteStatus[],
+  age: number,
+  dryRun: boolean,
+  dir: string,
+  io: CliIo,
+): Promise<number> {
+  const backlog = await load(dir, io);
+  if (!backlog) return 1;
+  const now = (io.now ?? Date.now)();
+  try {
+    const removed = await prune(backlog.items, statuses, age, now, dryRun);
+    for (const { note, dir: gone } of removed) {
+      io.stdout(`${dryRun ? 'Would delete' : 'Deleted'} ${clean(note.id)}  ${clean(gone)}\n`);
+    }
+    if (!removed.length) io.stderr('No notes to delete.\n');
+    // The sink's records of notes it was sent, for answering a resend.
+    if (!dryRun) await forgetOldClientIds(resolve(dir), now);
+  } catch (error) {
+    io.stderr(`Couldn't prune ${dir}: ${(error as Error).message}\n`);
+    return 1;
+  }
+  return 0;
 }
 
 /** The options each command takes. */
@@ -195,6 +350,10 @@ const OPTIONS: Readonly<Record<string, readonly string[]>> = {
   import: ['dir'],
   list: ['status', 'type', 'author', 'route', 'since', 'group-by', 'json', 'dir'],
   show: ['json', 'dir'],
+  resolve: ['note', 'ref', 'dir'],
+  wontfix: ['note', 'ref', 'dir'],
+  reopen: ['dir'],
+  prune: ['older-than', 'status', 'dry-run', 'dir'],
 };
 
 const isGroup = (value: string): value is Group => (GROUPS as readonly string[]).includes(value);

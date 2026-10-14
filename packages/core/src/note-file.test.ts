@@ -246,6 +246,50 @@ describe('updateNote', () => {
     });
   });
 
+  it('replaces only the values, keeping their comments and every other byte', () => {
+    const text = [
+      '---',
+      'id: A',
+      'schema: 1',
+      'status: open   # triaged',
+      "created: '2026-10-09T18:42:11.204Z'",
+      'element: {selector: "#x",  ownerTeam: { name: web }}',
+      'flags: [beta,new]',
+      'resolution:',
+      'tags:',
+      '  - ui # first',
+      '  - copy',
+      'after: 1',
+      '---',
+      'Body.',
+    ].join('\n');
+    const updated = value(
+      updateNote(text, { status: 'resolved', resolution: 'Two\nlines', tags: ['on'] }),
+    );
+    expect(updated).toBe(
+      text
+        .replace('status: open   #', 'status: resolved   #')
+        .replace('resolution:', 'resolution: "Two\\nlines"')
+        .replace('  - ui # first\n  - copy', '  ["on"]'),
+    );
+    expect(value(parseNote(updated))).toMatchObject({
+      status: 'resolved',
+      resolution: 'Two\nlines',
+      tags: ['on'],
+      flags: ['beta', 'new'],
+    });
+  });
+
+  it.each([['resolution: # later'], ['resolution:   # later'], ['resolution:\t# later']])(
+    'keeps a comment after an empty value a comment: %j',
+    (line) => {
+      const text = `---\nid: A\nschema: 1\nstatus: open\ncreated: '2026-10-09T18:42:11.204Z'\n${line}\n---\nBody.`;
+      const updated = value(updateNote(text, { resolution: 'fixed' }));
+      expect(updated).toBe(text.replace('# later', 'fixed # later'));
+      expect(value(parseNote(updated)).resolution).toBe('fixed');
+    },
+  );
+
   it('keeps CRLF line endings and a BOM', () => {
     const crlf = `\uFEFF${original.replace(/\n/g, '\r\n')}`;
     const updated = value(updateNote(crlf, { status: 'resolved', tags: ['a'] }));
