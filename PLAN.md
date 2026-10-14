@@ -219,7 +219,7 @@ The internal `Transport` interface is `(note, attachments) => Promise<Receipt>`.
 ```
 field-notes serve     [--port 4747] [--dir .field-notes]
 field-notes tail      [--json]                  # stream new notes as they arrive (agent-session UX)
-field-notes list      [--status open] [--type change] [--author] [--route] [--since 2d] [--group-by route|type|author] [--json]
+field-notes list      [--status open|resolved|wontfix|all] [--type change] [--author] [--route /checkout/*] [--since 2d] [--group-by route|type|author] [--json]
 field-notes show      <id> [--json]
 field-notes resolve   <id...> --note "..." [--ref <sha|PR|issue>]
 field-notes wontfix   <id...> --note "..."
@@ -229,6 +229,7 @@ field-notes export    [filters] --format md|json|csv     # digest for a meeting,
 field-notes prune     --status resolved --older-than 30d
 ```
 
+- **`list` and `show`** find notes by the `id` in `note.md`. Filters can be repeated, and match a whole value: in any case for type and author, with `*` as a wildcard for routes. `--json` prints each note as `{ dir, screenshot, note }`, with `note` exactly as the spec's JSON shape. [docs/cli.md](./docs/cli.md) has the details.
 - **`tail`** lets anything consume notes live. For example, an agent session runs it (or polls `list --since`) and acts on each note as it lands. It prints one JSON line per note.
 - **`export --format`** produces digests (for example, for requirement gathering): grouped by route or type, with screenshots inlined, ready to paste into a doc or ticket.
 
