@@ -98,7 +98,10 @@ export interface FieldNotesOptions {
    * them as a zip.
    */
   mode?: 'local' | 'export' | undefined;
-  /** Export mode: how long "Download last export again" stays available. Default 7. */
+  /**
+   * Export mode: days "Download last export again" stays available. Then the
+   * exported notes are cleared, the next time the panel opens. Default 7.
+   */
   exportRetentionDays?: number | undefined;
   /**
    * Export mode: suggest an export once the unexported notes reach this many,

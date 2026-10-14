@@ -206,6 +206,22 @@ describe('export mode', () => {
     expect(await outboxView().list()).toEqual([]);
   });
 
+  it("forgets an expired export when the panel opens, without My notes, and keeps what's newer", async () => {
+    mount();
+    await submit('exported');
+    await openNotes();
+    await exportAll();
+    handle?.close();
+    await submit('not exported');
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + 7 * 86_400_000 + 1000);
+    await handle?.open();
+    await vi.waitFor(async () => {
+      expect((await outboxView().list()).map((entry) => entry.note.body)).toEqual(['not exported']);
+    });
+    expect(query('#field-notes-text')).not.toBeNull();
+  });
+
   it('keeps the last export for exportRetentionDays', async () => {
     mount({ exportRetentionDays: 1 });
     await submit('kept a day');

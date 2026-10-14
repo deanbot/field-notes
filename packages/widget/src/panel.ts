@@ -517,6 +517,13 @@ export function showPanel(root: ShadowRoot, view: PanelView): void {
   target.outbox.pendingCount().catch((error: unknown) => {
     console.warn('[field-notes] could not read the outbox.', error);
   });
+  // Exported notes past their retention go, screenshots and all, whether or
+  // not "My notes" is opened.
+  if (exporting) {
+    target.outbox.prune('exported', exporting.retention).catch((error: unknown) => {
+      console.warn('[field-notes] could not clear old exports.', error);
+    });
+  }
 }
 
 /** A pending count from elsewhere (background delivery), for the header. */
