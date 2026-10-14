@@ -8,4 +8,4 @@ Add `field-notes list` and `field-notes show <id>`, which read the notes in `--d
 - **`show`** prints one note, found by its id or the start of it, with the absolute path of its screenshot.
 - **`--json`** prints each note as `{ dir, screenshot, note }`, where `note` is exactly the spec's JSON shape, unknown fields included. The shape is documented in `docs/cli.md`.
 - **What's skipped:** directories that aren't valid notes are reported on stderr and skipped. That includes a note whose schema is newer than this version reads.
-- **Untrusted text:** text output drops control characters from notes, so a note can't rewrite the terminal.
+- **Untrusted text:** text output drops control characters from notes, so a note can't rewrite the terminal. `import` now does the same for the id in its conflict message.

@@ -30,11 +30,23 @@ export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const UNITS: Record<string, number> = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 };
 
-/** `30m`, `12h`, `2d`, `1w` before `now`, or an ISO date or date-time. */
+/**
+ * `30m`, `12h`, `2d`, `1w` before `now`, or an ISO date or date-time. A date,
+ * or a date-time without an offset, is local time, as in git.
+ */
 function parseSince(text: string, now: number): number | undefined {
   const ago = /^(\d+)([mhdw])$/.exec(text);
   if (ago) return now - Number(ago[1]) * (UNITS[ago[2] ?? ''] ?? 0);
-  if (!/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text)) return undefined;
+  const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (date) {
+    const [year, month, day] = date.slice(1).map(Number) as [number, number, number];
+    const midnight = new Date(year, month - 1, day);
+    // No rolling over: 2026-02-30 isn't March 2nd.
+    return midnight.getMonth() === month - 1 && midnight.getDate() === day
+      ? midnight.getTime()
+      : undefined;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(text)) return undefined;
   const time = Date.parse(text);
   return Number.isNaN(time) ? undefined : time;
 }
@@ -143,24 +155,27 @@ const NONE: Record<Group, string> = {
   author: '(no author)',
 };
 
-function groupOf(note: Note, group: Group): string {
-  const value = note[group];
-  return value ? cleanLine(value) : NONE[group];
-}
-
-/** Notes in groups, groups in order of their first note, notes oldest first. */
+/**
+ * Notes in groups, groups in order of their first note, notes oldest first.
+ * Types and authors are grouped in any case, as they're filtered, under the
+ * first note's spelling.
+ */
 export function grouped(items: readonly Item[], group: Group): Map<string, Item[]> {
-  const groups = new Map<string, Item[]>();
+  const groups = new Map<string, { label: string; items: Item[] }>();
   for (const item of items) {
-    const key = groupOf(item.note, group);
-    groups.set(key, [...(groups.get(key) ?? []), item]);
+    const value = item.note[group];
+    const label = value ? cleanLine(value) : NONE[group];
+    const key = value && group !== 'route' ? label.toLowerCase() : label;
+    const found = groups.get(key);
+    if (found) found.items.push(item);
+    else groups.set(key, { label, items: [item] });
   }
-  return groups;
+  return new Map([...groups.values()].map(({ label, items: members }) => [label, members]));
 }
 
 function rows(items: readonly Item[], indent = ''): string {
   const cells = items.map(({ note }) => [
-    note.id,
+    cleanLine(note.id),
     note.status,
     note.type ? cleanLine(note.type) : '-',
     note.route ? cleanLine(note.route) : '-',
@@ -214,5 +229,5 @@ export function showText(item: Item): string {
     .filter((field): field is [string, string] => field[1] !== undefined && field[1] !== '')
     .map(([name, value]) => `${name}: ${cleanLine(value)}`);
   const body = clean(note.body).replace(/\s+$/, '');
-  return `${note.id}\n${head.join('\n')}\n${body ? `\n${body}\n` : ''}`;
+  return `${cleanLine(note.id)}\n${head.join('\n')}\n${body ? `\n${body}\n` : ''}`;
 }

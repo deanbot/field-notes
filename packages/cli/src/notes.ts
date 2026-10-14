@@ -76,7 +76,7 @@ async function readItem(dir: string): Promise<Item | Skipped | undefined> {
   if (parsed.ok) return { dir, note: parsed.value };
   const { error } = parsed;
   if (error.issues.some((issue) => issue.path === 'schema')) {
-    return { dir, reason: 'its schema is not 1: a newer field-notes may read it' };
+    return { dir, reason: "its schema isn't 1, the version this field-notes reads" };
   }
   return { dir, reason: error.message };
 }

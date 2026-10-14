@@ -23,7 +23,9 @@ Each filter but `--since` can be given more than once, and a note matches if it 
 | `--route`            | The whole route. `*` matches anything, so `/checkout/*` matches every page under `/checkout/`                        |
 | `--since`            | Notes created in the last `30m`, `12h`, `2d` or `1w`, or since a date such as `2026-10-01` or `2026-10-01T09:00:00Z` |
 
-A note without the field never matches that filter. `--group-by` puts rows under a heading per value, and notes without one under `(no route)`, `(no type)` or `(no author)`.
+A date, or a date-time without an offset, is local time, as in git. A note without the field never matches that filter.
+
+`--group-by` puts rows under a heading per value, and notes without one under `(no route)`, `(no type)` or `(no author)`. Types and authors are grouped in any case, as they're filtered, under the first note's spelling.
 
 ### `--json`
 

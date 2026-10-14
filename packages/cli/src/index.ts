@@ -28,6 +28,8 @@ export interface CliIo {
   now?: () => number;
 }
 
+const DOCS = 'https://github.com/deanbot/field-notes/blob/main/docs/cli.md';
+
 const USAGE = `Usage: field-notes <command> [options]
 
 Commands:
@@ -52,16 +54,18 @@ Commands:
                          a date like 2026-10-01
            --group-by <g>
                          Group by route, type or author
-           --json        Print JSON (see docs/cli.md)
+           --json        Print JSON
            --dir <path>  Where notes are (default .field-notes)
   show <id>
            Show a note: its id, or the start of it
-           --json        Print JSON (see docs/cli.md)
+           --json        Print JSON
            --dir <path>  Where notes are (default .field-notes)
 
 Options:
   -h, --help     Show this help
   -v, --version  Show version
+
+More, including the JSON shape: ${DOCS}
 `;
 
 /** Runs the CLI and resolves with the process exit code. */
@@ -171,7 +175,8 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
       if (!found.matches.length) io.stderr(`No note has the id ${JSON.stringify(id)}.\n`);
       else {
         io.stderr(`${JSON.stringify(id)} could be any of these notes:\n`);
-        for (const { note, dir } of found.matches) io.stderr(`  ${note.id}  ${clean(dir)}\n`);
+        for (const { note, dir } of found.matches)
+          io.stderr(`  ${clean(note.id)}  ${clean(dir)}\n`);
       }
       return 1;
     }
@@ -238,7 +243,7 @@ async function runImport(zip: string, dir: string, io: CliIo): Promise<number> {
   const already = skipped.length ? ` (${plural(skipped.length, 'note')} already there)` : '';
   io.stdout(`Imported ${plural(imported.length, 'note')} into ${dir}${already}.\n`);
   for (const { id, dir: taken } of conflicts) {
-    io.stderr(`Conflict: ${taken} holds another note, so ${id} was not imported.\n`);
+    io.stderr(`Conflict: ${taken} holds another note, so ${clean(id)} was not imported.\n`);
   }
   return conflicts.length ? 1 : 0;
 }

@@ -161,11 +161,30 @@ describe('list', () => {
       [['--status', 'closed'], '--status must be open, resolved, wontfix or all, not "closed"'],
       [['--since', '2 days'], '--since must be like 30m, 12h, 2d, 1w or 2026-10-01'],
       [['--since', '2026-13-45'], '--since must be'],
+      [['--since', '2026-02-30'], '--since must be'],
+      [['--since', '2026-10-14 09:00'], '--since must be'],
       [['--group-by', 'status'], '--group-by must be route, type, author, not "status"'],
     ])('refuses %j with exit code 2', async (args, message) => {
       const { code, stdout, stderr } = await cli('list', ...args);
       expect({ code, stdout }).toEqual({ code: 2, stdout: '' });
       expect(stderr).toContain(message);
+    });
+
+    it('reads a date, and a date-time without an offset, as local time', async () => {
+      const zone = process.env.TZ;
+      try {
+        process.env.TZ = 'America/Los_Angeles';
+        // E: 8 p.m. on the 13th in Los Angeles, though it's the 14th in UTC.
+        await add(note('E', { created: '2026-10-14T03:00:00.000Z' }));
+        expect(ids(await json<Item[]>('list', '--since', '2026-10-14'))).toEqual(['A']);
+        expect(ids(await json<Item[]>('list', '--since', '2026-10-13T19:00'))).toEqual(['E', 'A']);
+        expect(ids(await json<Item[]>('list', '--since', '2026-10-13T19:00Z'))).toEqual(['E', 'A']);
+        process.env.TZ = 'UTC';
+        expect(ids(await json<Item[]>('list', '--since', '2026-10-14'))).toEqual(['E', 'A']);
+      } finally {
+        if (zone === undefined) delete process.env.TZ;
+        else process.env.TZ = zone;
+      }
     });
 
     it('says so on stderr when nothing matches, and prints [] with --json', async () => {
@@ -189,6 +208,15 @@ describe('list', () => {
     );
     // JSON keeps one shape: grouping only orders it.
     expect(ids(await json<Item[]>('list', '--group-by', 'author'))).toEqual(['A', 'C', 'B']);
+  });
+
+  it('groups types and authors in any case, as it filters them, but not routes', async () => {
+    await add(note('A', { type: 'Bug', route: '/Cart' }));
+    await add(note('B', { type: 'bug', route: '/cart' }));
+    expect((await cli('list', '--group-by', 'type')).stdout).toBe(
+      'Bug (2)\n  A  open  Bug  /Cart  Note A\n  B  open  bug  /cart  Note B\n',
+    );
+    expect((await cli('list', '--group-by', 'route')).stdout).toContain('/Cart (1)\n');
   });
 
   it('prints each note as { dir, screenshot, note }, the note exactly as in note.md', async () => {
@@ -241,6 +269,16 @@ describe('list', () => {
     expect(item?.note).toEqual(hostile);
   });
 
+  it('prints an id without its control characters too', async () => {
+    const one = await add(note('A\u001b[2J\u202eX', { body: 'One' }), 'one');
+    const two = await add(note('A\u001b[2J\u202eY', { body: 'Two' }), 'two');
+    expect((await cli('list')).stdout).toBe('A[2JX  open  -  -  One\nA[2JY  open  -  -  Two\n');
+    expect((await cli('show', 'a\u001b[2J\u202ex')).stdout).toMatch(/^A\[2JX\n/);
+    expect((await cli('show', 'a')).stderr).toBe(
+      `"a" could be any of these notes:\n  A[2JX  ${one}\n  A[2JY  ${two}\n`,
+    );
+  });
+
   describe('directories that hold no note', () => {
     it('skips one without note.md quietly: it is still being written', async () => {
       await add(note('A'));
@@ -258,7 +296,7 @@ describe('list', () => {
       expect(ids(JSON.parse(stdout) as Item[])).toEqual(['A']);
       expect(stderr).toBe(
         `Skipped ${broken}: note.md must start with a --- frontmatter block\n` +
-          `Skipped ${newer}: its schema is not 1: a newer field-notes may read it\n`,
+          `Skipped ${newer}: its schema isn't 1, the version this field-notes reads\n`,
       );
     });
 
