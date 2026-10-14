@@ -307,6 +307,15 @@ describe('import', () => {
     );
   });
 
+  it('prints a conflicting id without its control characters', async () => {
+    const dir = join(root, '.field-notes');
+    await capture(['import', await zipOf(['a_b', 'same']), '--dir', dir]);
+    const result = await capture(['import', await zipOf(['a\u001bb', 'same']), '--dir', dir]);
+    expect(result.stderr).toBe(
+      'Conflict: items/a_b-same holds another note, so ab was not imported.\n',
+    );
+  });
+
   it('rejects a hostile or broken zip with exit 1, writing nothing', async () => {
     const zip = join(root, 'evil.zip');
     await writeFile(zip, 'PK not really');
