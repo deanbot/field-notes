@@ -71,7 +71,8 @@ export interface FieldNotesOptions {
    * `[data-field-notes-mask]` content are painted over. `'display'` asks the
    * browser to share this tab instead, for exact pixels: only where it can
    * prove the share is this tab (Chromium), with `'dom'` everywhere else and
-   * after a pick. A pasted or dropped image takes the screenshot's place.
+   * after a pick. Its masking is paint alone: iframes are painted over, and
+   * pseudo-element content drawn outside a masked element's box shows. A pasted or dropped image takes the screenshot's place.
    * `'off'` takes none, and accepts no pasted or dropped images.
    */
   screenshot?: 'dom' | 'display' | 'off' | undefined;

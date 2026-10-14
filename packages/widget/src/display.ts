@@ -98,7 +98,7 @@ export async function captureDisplay(
     const { clientWidth: width, clientHeight: height } = document.documentElement;
     const scale = Math.min(devicePixelRatio, 2);
     const canvas = draw(video, width * scale, height * scale);
-    if (aborted() || !paintMasks(canvas, maskRects(), scale)) return undefined;
+    if (aborted() || !paintMasks(canvas, maskRects({ frames: true }), scale)) return undefined;
     return await encode(canvas);
   } finally {
     for (const { el, value, priority } of hidden) el.style.setProperty('display', value, priority);

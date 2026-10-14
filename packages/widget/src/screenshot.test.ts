@@ -93,6 +93,56 @@ async function shoot(exclude: Element = document.createElement('div')): Promise<
 
 const reddish = (r: number, g: number, b: number): boolean => r > 150 && g < 100 && b < 100;
 
+/**
+ * A page of masked content, all red: text, its overflow, a far-off
+ * pseudo-element, a descendant positioned away, a password, an image, a
+ * shadow root and a same-origin frame. Resolves to where the red is on
+ * screen, but the pseudo-element's, which can't be measured.
+ */
+async function maskedPage(): Promise<() => DOMRect[]> {
+  const red = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="red"/></svg>')}`;
+  page(
+    `
+    <p data-field-notes-mask class="text" style="color:rgb(255,0,0);background:rgb(255,0,0)">4111 1111 1111 1111</p>
+    <div data-field-notes-mask class="overflow" style="width:20px;white-space:nowrap;color:rgb(255,0,0);font-size:40px">OVERFLOWING</div>
+    <div data-field-notes-mask class="before" style="height:20px"></div>
+    <div data-field-notes-mask><div><span class="away" style="position:absolute;left:200px;top:300px;width:40px;height:40px;background:rgb(255,0,0)"></span></div></div>
+    <input type="password" value="hunter2" style="color:rgb(255,0,0);font-size:40px">
+    <img data-field-notes-mask src="${red}" alt="Jane's passport" width="40" height="40">
+    <div class="host"></div>
+    <iframe class="frame" style="width:200px;height:60px;border:0"></iframe>`,
+    `.before::before { content: 'SECRET'; position: absolute; left: 250px; top: 500px; color: rgb(255,0,0); font-size: 40px; }`,
+  );
+  const inShadow = document.createElement('div');
+  inShadow.setAttribute('data-field-notes-mask', '');
+  inShadow.style.cssText = 'height:40px;background:rgb(255,0,0)';
+  inShadow.textContent = 'shadow';
+  find('.host').attachShadow({ mode: 'open' }).append(inShadow);
+  const frame = find('.frame');
+  if (!(frame instanceof HTMLIFrameElement)) throw new Error('no frame');
+  await new Promise((loaded) => {
+    frame.addEventListener('load', loaded, { once: true });
+    frame.srcdoc =
+      '<body style="margin:0"><div data-field-notes-mask style="height:60px;background:rgb(255,0,0)">in a frame</div></body>';
+  });
+  return () => {
+    const overflow = document.createRange();
+    overflow.selectNodeContents(find('.overflow'));
+    const inFrame = frame.contentDocument?.body.firstElementChild?.getBoundingClientRect();
+    const { x, y } = frame.getBoundingClientRect();
+    return [
+      ...['.text', '.away', 'input[type="password"]', 'img'].map((s) =>
+        find(s).getBoundingClientRect(),
+      ),
+      overflow.getBoundingClientRect(),
+      inShadow.getBoundingClientRect(),
+      ...(inFrame
+        ? [new DOMRect(inFrame.x + x, inFrame.y + y, inFrame.width, inFrame.height)]
+        : []),
+    ];
+  };
+}
+
 describe('captureScreenshot', () => {
   it('shows the viewport as it is seen: scrolled both ways, fixed, sticky and absolute elements, inner scrollers', async () => {
     // The default 8px body margin, a first child's margin collapsing through
@@ -123,28 +173,7 @@ describe('captureScreenshot', () => {
   });
 
   it('never shows masked content: text, its overflow, pseudo-elements, passwords, images, shadow roots, same-origin frames', async () => {
-    const red = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="red"/></svg>')}`;
-    page(
-      `
-      <p data-field-notes-mask style="color:rgb(255,0,0);background:rgb(255,0,0)">4111 1111 1111 1111</p>
-      <div data-field-notes-mask style="width:20px;white-space:nowrap;color:rgb(255,0,0);font-size:40px">OVERFLOWING</div>
-      <div data-field-notes-mask class="before" style="height:20px"></div>
-      <div data-field-notes-mask><span style="position:absolute;left:200px;top:300px;width:40px;height:40px;background:rgb(255,0,0)"></span></div>
-      <input type="password" value="hunter2" style="color:rgb(255,0,0);font-size:40px">
-      <img data-field-notes-mask src="${red}" alt="Jane's passport" width="40" height="40">
-      <div class="host"></div>
-      <iframe class="frame" style="width:200px;height:60px;border:0"></iframe>`,
-      `.before::before { content: 'SECRET'; position: absolute; left: 250px; top: 500px; color: rgb(255,0,0); font-size: 40px; }`,
-    );
-    find('.host').attachShadow({ mode: 'open' }).innerHTML =
-      '<div data-field-notes-mask style="height:40px;background:rgb(255,0,0)">shadow</div>';
-    const frame = find('.frame');
-    if (!(frame instanceof HTMLIFrameElement)) throw new Error('no frame');
-    await new Promise((loaded) => {
-      frame.addEventListener('load', loaded, { once: true });
-      frame.srcdoc =
-        '<body style="margin:0"><div data-field-notes-mask style="height:60px;background:rgb(255,0,0)">in a frame</div></body>';
-    });
+    await maskedPage();
     const shot = await shoot();
     expect(shot.some(reddish)).toBe(false);
   });
@@ -424,9 +453,20 @@ describe('the screenshot in the widget', () => {
         regionCapture?: boolean;
         /** As if not opened by a click or key (an earlier test's may still count). */
         gesture?: boolean;
+        /** Where the tab shows masked content in red. Default: the password field. */
+        secrets?: () => DOMRect[];
       } = {},
     ): Share {
-      const { answer: reply = 'share', later = false, regionCapture = true, gesture = true } = how;
+      const {
+        answer: reply = 'share',
+        later = false,
+        regionCapture = true,
+        gesture = true,
+        secrets = () =>
+          [...document.querySelectorAll('input[type="password"]')].map((el) =>
+            el.getBoundingClientRect(),
+          ),
+      } = how;
       const cropped: DOMRect[] = [];
       vi.stubGlobal(
         'CropTarget',
@@ -446,16 +486,10 @@ describe('the screenshot in the widget', () => {
         if (!paint) return;
         paint.fillStyle = 'rgb(0, 0, 255)';
         paint.fillRect(0, 0, tab.width, tab.height);
-        const field = document.querySelector('input[type="password"]')?.getBoundingClientRect();
         const scale = tab.width / document.documentElement.clientWidth;
         paint.fillStyle = 'rgb(255, 0, 0)';
-        if (field) {
-          paint.fillRect(
-            field.x * scale,
-            field.y * scale,
-            field.width * scale,
-            field.height * scale,
-          );
+        for (const { x, y, width, height } of secrets()) {
+          paint.fillRect(x * scale, y * scale, width * scale, height * scale);
         }
       };
       // Some engines only send a frame once the canvas changes.
@@ -549,6 +583,28 @@ describe('the screenshot in the widget', () => {
         expect(shot.scale).toBe(Math.min(devicePixelRatio, 2));
         expect(shot.at(5, 5)).toBe('0,0,255');
         expect(shot.some(reddish)).toBe(false);
+      },
+    );
+
+    it.runIf(plays)(
+      'masks what the DOM screenshot does: overflow, descendants positioned away, shadow roots, frames',
+      async () => {
+        const secrets = await maskedPage();
+        expect(secrets()).toHaveLength(7);
+        share({ secrets });
+        mount({ screenshot: 'display' });
+        await userEvent.click(trigger());
+        await vi.waitFor(() => {
+          expect(thumb()?.src).toMatch(/^blob:/);
+        });
+        const { attachments } = await submitted();
+        const blob = attachments['screenshot.png'];
+        if (!blob) throw new Error('no screenshot attached');
+        const shot = await pixels(blob);
+        expect(shot.some(reddish)).toBe(false);
+        for (const { x, y, width, height } of secrets()) {
+          expect(shot.at(x + width / 2, y + height / 2)).toBe('136,136,136');
+        }
       },
     );
 

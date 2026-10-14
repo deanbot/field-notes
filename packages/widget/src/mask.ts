@@ -6,20 +6,35 @@ export const MASKED = 'input[type="password"], [data-field-notes-mask]';
 /** What masked areas are painted with. */
 const MASK_FILL = '#888';
 
-/** Every masked element, in the document and in open shadow roots. */
-function masked(root: Document | ShadowRoot, found: Element[] = []): Element[] {
-  found.push(...root.querySelectorAll(MASKED));
-  for (const el of root.querySelectorAll('*')) if (el.shadowRoot) masked(el.shadowRoot, found);
+/** Every element in `root`, and in the open shadow roots within it. */
+function within(root: ParentNode, found: Element[] = []): Element[] {
+  for (const el of root.querySelectorAll('*')) {
+    found.push(el);
+    if (el.shadowRoot) within(el.shadowRoot, found);
+  }
   return found;
 }
 
-/** Where masked content is on screen: each element's box, and its overflowing content. */
-export function maskRects(): DOMRect[] {
-  return masked(document).flatMap((el) => {
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    return [el.getBoundingClientRect(), range.getBoundingClientRect()];
-  });
+const box = (el: Element): DOMRect => el.getBoundingClientRect();
+
+/**
+ * Where masked content is on screen: each masked element's box, its content's
+ * (overflow) and each of its descendants' (positioned away from it). With
+ * `frames`, every iframe's box too: a shot of real pixels, unlike the DOM
+ * copy, shows what's in frames, and a cross-origin one can't be looked into.
+ * Pseudo-element content drawn outside the element's box can't be measured.
+ */
+export function maskRects({ frames = false }: { frames?: boolean } = {}): DOMRect[] {
+  const all = within(document);
+  const rects = all
+    .filter((el) => el.matches(MASKED))
+    .flatMap((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return [box(el), range.getBoundingClientRect(), ...within(el).map(box)];
+    });
+  if (frames) rects.push(...all.filter((el) => el instanceof HTMLIFrameElement).map(box));
+  return rects;
 }
 
 /**
