@@ -55,7 +55,11 @@
 
 > @everyone, no route, no type.
 >
-> Second paragraph.
+> `items[0]` is undefined when `<Cart>` mounts, and C:\\tmp is \\`odd`.
+>
+> ```ts
+> if (a[i] < b) path = "C:\tmp";
+> ```
 
 ## /settings (1)
 

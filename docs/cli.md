@@ -73,7 +73,7 @@ Screenshots are linked, never embedded. Most trackers and docs don't show embedd
 
 Digests are made to be pasted where they're rendered, so the notes' text stays text:
 
-- **Markdown:** fields are escaped, and the body is quoted with `<` and `[` escaped. A note can't add HTML or images, hide where a link goes, or put anything outside its quote. Control characters are dropped, as in `list`.
+- **Markdown:** fields are escaped, and the body is quoted. Outside code, `<`, `[` and backticks that don't pair up are escaped. Code spans and fenced code blocks are kept as written, inside delimiters `export` chooses, so where code ends can't be faked. A note can't add HTML or images, hide where a link goes, or put anything outside its quote. Control characters are dropped, as in `list`.
   - The body is still markdown inside its quote, so a `# line` is a heading there.
   - A bare URL in the body still becomes a link where the renderer links bare URLs, as GitHub does.
   - On GitHub, an `@name` in the body mentions that person or team, and a `#123` links that issue. Check a digest for these before posting it there.

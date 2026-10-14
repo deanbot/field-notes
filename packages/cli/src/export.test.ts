@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { type Note, serializeNote } from '@field-notes/core';
+import { HtmlRenderer, Parser } from 'commonmark';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type CliIo, run } from './index.ts';
 
@@ -58,6 +59,11 @@ async function cli(...argv: string[]): Promise<{ code: number; stdout: string; s
   return { code, stdout, stderr };
 }
 
+/** Markdown as HTML, as CommonMark's reference implementation renders it. */
+function render(markdown: string): string {
+  return new HtmlRenderer().render(new Parser().parse(markdown));
+}
+
 /**
  * Notes with what a digest has to get right: groups, missing fields, a
  * missing screenshot, non-ASCII text, and text written to break out of each
@@ -104,7 +110,15 @@ async function fixture(): Promise<void> {
   await add(
     note('01JA8X5C', {
       created: '2026-10-11T10:30:00.000Z',
-      body: '@everyone, no route, no type.\n\nSecond paragraph.',
+      body: [
+        '@everyone, no route, no type.',
+        '',
+        '`items[0]` is undefined when `<Cart>` mounts, and C:\\tmp is \\`odd`.',
+        '',
+        '~~~ts',
+        'if (a[i] < b) path = "C:\\tmp";',
+        '~~~',
+      ].join('\n'),
     }),
   );
   await add(
@@ -141,6 +155,55 @@ describe('export', () => {
     expect(text.startsWith('﻿id,status,')).toBe(true);
     expect(text.match(/\r\n01JA8X/g)).toHaveLength(4);
     expect(text.endsWith(',\r\n')).toBe(true);
+  });
+
+  it('keeps code in a body as written, and as code', async () => {
+    await fixture();
+    const html = render(await exported());
+    expect(html).toContain('<code>items[0]</code> is undefined when <code>&lt;Cart&gt;</code>');
+    expect(html).toContain('C:\\tmp is \\<code>odd</code>.');
+    expect(html).toContain(
+      '<pre><code class="language-ts">if (a[i] &lt; b) path = &quot;C:\\tmp&quot;;',
+    );
+  });
+
+  // Bodies that try to get markup past the escaping, by making code end
+  // somewhere other than where export thinks it does.
+  it.each([
+    ['a span over two lines', '`a\nb` <img src=x onerror=alert(1)> `'],
+    ['a span the body escaped', '\\`<img src=x>\\`'],
+    ['a span within a span', '`` ` `` <img src=x> `'],
+    ['a tag around a backtick', '<a href="`">`<img src=x>`'],
+    ['a fence after a tab', '\t~~~\n```\n~~~\n<img src=x>\n```'],
+    ['an indented fence', ' ```\n```\n<img src=x>\n```'],
+    ['a fence in a list item', '- a\n  ```\n<img src=x>\n```'],
+    ['a fence in a nested quote', '> ```\n<img src=x>\n```'],
+    ['a backtick in the info string', '``` js`x\n<img src=x>\n```'],
+    ['a fence inside a longer one', '````\n```\n<img src=x>\n````\n<img src=y>'],
+    ['indented code', '    ```\n<img src=x>\n```'],
+    ['links and images', '[x](javascript:alert(1)) `ok` ![y](/p.png) <javascript:alert(1)>'],
+  ])('renders no markup from %s', async (_, body) => {
+    await add(note('01JA8X9Z', { body }));
+    const html = render(await exported());
+    const tags = new Set([...html.matchAll(/<\/?([a-z0-9]+)/g)].map((m) => m[1]));
+    expect(html).not.toMatch(/<a\b|<img\b/);
+    for (const tag of tags) {
+      expect([
+        'h1',
+        'h2',
+        'h3',
+        'p',
+        'ul',
+        'li',
+        'strong',
+        'code',
+        'pre',
+        'blockquote',
+        'hr',
+        'br',
+        'em',
+      ]).toContain(tag);
+    }
   });
 
   it('groups by type in any case, and by author', async () => {

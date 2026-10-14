@@ -110,12 +110,83 @@ const AS_CODE = new Set(['url', 'route', 'element', 'screenshot']);
 
 /**
  * The body as a blockquote, so no line can end the note's section. It stays
- * markdown, but without HTML, links or images: `<` and `[` are escaped.
+ * markdown, but without HTML, links or images: outside code, `<`, `[` and
+ * backticks that don't pair up are escaped. Code is left as written, inside
+ * delimiters chosen here rather than the body's own, so that what markdown
+ * reads as code is exactly what this does. Where a fence opens and closes
+ * only decides how code looks: each is written out again from the quote's
+ * start, which ends any list or nested quote around it.
  */
 function quote(body: string): string {
-  const lines = clean(body).replace(/\s+$/, '').split('\n');
-  return lines.map((line) => (line ? `> ${line.replace(/[\\<[]/g, '\\$&')}` : '>')).join('\n');
+  const out: string[] = [];
+  let fence: { mark: string; size: number; info: string; lines: string[] } | undefined;
+  for (const line of clean(body).replace(/\s+$/, '').split('\n').map(untab)) {
+    if (fence) {
+      const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line)?.[1];
+      if (close?.[0] === fence.mark && close.length >= fence.size) {
+        out.push(...fenced(fence.info, fence.lines));
+        fence = undefined;
+      } else fence.lines.push(line);
+      continue;
+    }
+    const [, run, info = ''] = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line) ?? [];
+    if (run && !(run.startsWith('`') && info.includes('`'))) {
+      fence = { mark: run.charAt(0), size: run.length, info, lines: [] };
+      continue;
+    }
+    out.push(escapeLine(line));
+  }
+  if (fence) out.push(...fenced(fence.info, fence.lines));
+  return out.map((line) => (line ? `> ${line}` : '>')).join('\n');
 }
+
+/** Leading tabs as spaces, so indentation here is what markdown sees. */
+const untab = (line: string): string =>
+  line.replace(/^[ \t]+/, (space) => space.replace(/\t/g, '    '));
+
+/**
+ * A fenced code block, opening at the start of the quote (so it can't belong
+ * to a list or a nested quote) with a fence no line inside can close.
+ */
+function fenced(info: string, lines: readonly string[]): string[] {
+  const longest = Math.max(
+    2,
+    ...(lines
+      .join('\n')
+      .match(/`+/g)
+      ?.map((run) => run.length) ?? []),
+  );
+  const fence = '`'.repeat(longest + 1);
+  const language = /^\s*([\w+#.-]+)/.exec(info)?.[1] ?? '';
+  return [`${fence}${language}`, ...lines, fence];
+}
+
+/**
+ * One line of the body outside code. A backtick run with a run of the same
+ * length later in the line is a code span, kept as written; every other
+ * backtick is escaped, so no span can start here and end on another line.
+ */
+function escapeLine(line: string): string {
+  let out = '';
+  let rest = line;
+  for (;;) {
+    const open = /`+/.exec(rest);
+    if (!open) return out + escapeText(rest);
+    out += escapeText(rest.slice(0, open.index));
+    const run = open[0];
+    const after = rest.slice(open.index + run.length);
+    const close = new RegExp(`(?<!\`)${run}(?!\`)`).exec(after);
+    if (close) {
+      out += run + after.slice(0, close.index) + run;
+      rest = after.slice(close.index + run.length);
+    } else {
+      out += run.replace(/`/g, '\\`');
+      rest = after;
+    }
+  }
+}
+
+const escapeText = (text: string): string => text.replace(/[\\<[]/g, '\\$&');
 
 /** A link to a file, percent-encoded so any path stays one link. */
 function link(path: string): string {

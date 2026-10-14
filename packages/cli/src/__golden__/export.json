@@ -62,7 +62,7 @@
             "schema": 1,
             "status": "open",
             "created": "2026-10-11T10:30:00.000Z",
-            "body": "@everyone, no route, no type.\n\nSecond paragraph."
+            "body": "@everyone, no route, no type.\n\n`items[0]` is undefined when `<Cart>` mounts, and C:\\tmp is \\`odd`.\n\n~~~ts\nif (a[i] < b) path = \"C:\\tmp\";\n~~~"
           }
         }
       ]

@@ -10,5 +10,9 @@ Résumé ✓, \<b> stays text"
 - by ""one"", maybe"
 01JA8X5C,open,,,2026-10-11T10:30:00.000Z,,,,,,,,,,"'@everyone, no route, no type.
 
-Second paragraph."
+`items[0]` is undefined when `<Cart>` mounts, and C:\tmp is \`odd`.
+
+~~~ts
+if (a[i] < b) path = ""C:\tmp"";
+~~~"
 01JA8X6D,open,change,,2026-10-12T08:00:00.000Z,,,/settings,,,,,,,
