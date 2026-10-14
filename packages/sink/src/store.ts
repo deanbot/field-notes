@@ -3,9 +3,26 @@
 // directory without one is still being written. Each note's directory is
 // created exclusively, never reused.
 import { createHash, randomUUID } from 'node:crypto';
-import { link, mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import {
+  link,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
-import { type Note, NoteSchema, noteDirName, serializeNote, ulid } from '@field-notes/core';
+import {
+  DELIVERED_RETENTION_MS,
+  type Note,
+  NoteSchema,
+  noteDirName,
+  serializeNote,
+  ulid,
+} from '@field-notes/core';
 
 /** What the sink answers once a note is on disk. */
 export interface Receipt {
@@ -202,4 +219,34 @@ export function createStore(root: string, options: StoreOptions): Store {
   };
 
   return { save };
+}
+
+const KEY_RECORD = /^[0-9a-f]{64}\.json$/;
+
+/**
+ * Removes the records of client ids (`.sink/keys/`) older than the widget
+ * keeps a delivered note, after which it won't resend it. Leaves records
+ * still being written (`*.tmp`) alone. Resolves with how many went.
+ */
+export async function forgetOldClientIds(root: string, now: number = Date.now()): Promise<number> {
+  const keys = join(root, '.sink', 'keys');
+  let names: string[];
+  try {
+    names = await readdir(keys);
+  } catch (error) {
+    if (hasCode(error, 'ENOENT')) return 0;
+    throw error;
+  }
+  let forgotten = 0;
+  for (const name of names.filter((n) => KEY_RECORD.test(n))) {
+    const file = join(keys, name);
+    const age = await stat(file).then(
+      ({ mtimeMs }) => now - mtimeMs,
+      () => 0, // Gone already.
+    );
+    if (age <= DELIVERED_RETENTION_MS) continue;
+    await rm(file, { force: true });
+    forgotten++;
+  }
+  return forgotten;
 }

@@ -30,13 +30,19 @@ export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const UNITS: Record<string, number> = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 };
 
+/** `30m`, `12h`, `2d` or `1w`, in ms. */
+export function parseDuration(text: string): number | undefined {
+  const match = /^(\d+)([mhdw])$/.exec(text);
+  return match ? Number(match[1]) * (UNITS[match[2] ?? ''] ?? 0) : undefined;
+}
+
 /**
  * `30m`, `12h`, `2d`, `1w` before `now`, or an ISO date or date-time. A date,
  * or a date-time without an offset, is local time, as in git.
  */
 function parseSince(text: string, now: number): number | undefined {
-  const ago = /^(\d+)([mhdw])$/.exec(text);
-  if (ago) return now - Number(ago[1]) * (UNITS[ago[2] ?? ''] ?? 0);
+  const ago = parseDuration(text);
+  if (ago !== undefined) return now - ago;
   const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
   if (date) {
     const [year, month, day] = date.slice(1).map(Number) as [number, number, number];

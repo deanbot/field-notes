@@ -222,14 +222,16 @@ field-notes tail      [--json]                  # stream new notes as they arriv
 field-notes list      [--status open|resolved|wontfix|all] [--type change] [--author] [--route /checkout/*] [--since 2d] [--group-by route|type|author] [--json]
 field-notes show      <id> [--json]
 field-notes resolve   <id...> --note "..." [--ref <sha|PR|issue>]
-field-notes wontfix   <id...> --note "..."
-field-notes reopen    <id>
+field-notes wontfix   <id...> --note "..." [--ref <sha|PR|issue>]
+field-notes reopen    <id...>
 field-notes import    <export.zip> [--dir .field-notes]   # idempotent; validates every note against the schema
 field-notes export    [filters] --format md|json|csv     # digest for a meeting, spec doc, or spreadsheet
-field-notes prune     --status resolved --older-than 30d
+field-notes prune     --older-than 30d [--status resolved|wontfix] [--dry-run]
 ```
 
 - **`list` and `show`** find notes by the `id` in `note.md`. Filters can be repeated, and match a whole value: in any case for type and author, with `*` as a wildcard for routes. `--json` prints each note as `{ dir, screenshot, note }`, with `note` exactly as the spec's JSON shape. [docs/cli.md](./docs/cli.md) has the details.
+- **`resolve`, `wontfix` and `reopen`** change only `status` and `resolution` in `note.md`, byte for byte, never the body. `--note` (required to close a note) and `--ref` become `resolution`: `Fixed the label (ref: a1b2c3d)`. `reopen` clears it. If any id fits no note or more than one, nothing is changed.
+- **`prune`** deletes resolved and won't-fix notes whose `note.md` hasn't changed for `--older-than`, and never open ones. It also removes the sink's records of client ids older than the widget's delivered retention (7 days).
 - **`tail`** lets anything consume notes live. For example, an agent session runs it (or polls `list --since`) and acts on each note as it lands. It prints one JSON line per note.
 - **`export --format`** produces digests (for example, for requirement gathering): grouped by route or type, with screenshots inlined, ready to paste into a doc or ticket.
 

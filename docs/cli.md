@@ -56,10 +56,29 @@ The CLI reads only `items/*/note.md`, and finds notes by the `id` in `note.md`, 
 - Symlinked directories aren't followed.
 - If `items/` doesn't exist, there are no notes, and that isn't an error.
 
+## Changing notes
+
+```
+field-notes resolve <id...> --note "what was done" [--ref <commit|PR|issue>]
+field-notes wontfix <id...> --note "why not" [--ref <where it was decided>]
+field-notes reopen <id...>
+field-notes prune --older-than 30d [--status resolved|wontfix] [--dry-run]
+```
+
+- **`resolve`, `wontfix` and `reopen`** change only `status` and `resolution` in `note.md`. Everything else stays byte for byte: the body, comments, formatting and unknown fields. A field the note doesn't have yet is added at the end of the frontmatter.
+  - `--note` is required for `resolve` and `wontfix`. With `--ref`, `resolution` is `<note> (ref: <ref>)`.
+  - `reopen` sets `resolution` to `null`, and adds no `resolution` to a note that never had one.
+  - Ids work as for `show`. If any id fits no note or more than one, nothing is changed and the command exits 1. A note that already has the status and resolution is left alone.
+- **`prune`** deletes notes that are resolved or won't fix (or just the `--status` given) and whose `note.md` hasn't changed for `--older-than` (`30m`, `12h`, `2d`, `1w`). It never deletes an open note: `--status open` is refused, and each note is read again just before it goes, in case it was reopened.
+  - The age comes from the file's modification time, which is when `resolve` or `wontfix` last changed it. Copying the notes resets it, which only makes them look newer.
+  - Directories that aren't valid notes are never deleted.
+  - `--dry-run` lists what would be deleted, and deletes nothing.
+  - `prune` also removes the local sink's records of the notes it was sent (`.sink/keys/`) once they're older than the widget keeps a delivered note (7 days). The sink keeps them so that a note sent twice is stored once.
+
 ## Exit codes
 
-| Code | Meaning                                                                                                      |
-| ---- | ------------------------------------------------------------------------------------------------------------ |
-| 0    | Done. That includes `list` finding no notes, which it reports on stderr.                                     |
-| 1    | It couldn't be done: the notes directory can't be read, or no single note fits `show`'s id.                  |
-| 2    | The command line is wrong: an unknown command or option, an option the command doesn't take, or a bad value. |
+| Code | Meaning                                                                                                                      |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Done. That includes `list` finding no notes, which it reports on stderr.                                                     |
+| 1    | It couldn't be done: the notes directory can't be read, an id fits no single note, or a note couldn't be changed or deleted. |
+| 2    | The command line is wrong: an unknown command or option, an option the command doesn't take, or a bad value.                 |
