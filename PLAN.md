@@ -187,7 +187,7 @@ The outbox _is_ the store. Nothing is sent anywhere until the user exports.
 
 **Details:**
 
-- **Exporting doesn't delete.** Browsers can't confirm a download succeeded, so exported notes move to an `exported` state in IndexedDB. The badge excludes them. **"Download last export again"** rebuilds the same zip from them. It stays available until the next export or `exportRetentionDays` (default 7), after which they're purged.
+- **Exporting doesn't delete.** Browsers can't confirm a download succeeded, so exported notes move to an `exported` state in IndexedDB. The badge excludes them. **"Download last export again"** rebuilds the same zip from them. It stays available until the next export or `exportRetentionDays` (default 7), after which they're purged the next time the panel opens.
 - **The ID is assigned in the browser** (ULID) in this mode, because there's no sink. The schema already treats the ID as opaque, and `import` skips IDs it already has, so re-importing the same zip is idempotent.
 - **Notes are browser-local, and the UI says so.** The drawer shows a "N notes not yet exported, stored only in this browser" hint. Clearing site data, private windows or switching device loses unexported notes.
 - **Storage guard:** "My notes" shows a warning at `storageWarning` (default 50 notes or 100 MB), suggesting an export. Screenshots dominate the size.
