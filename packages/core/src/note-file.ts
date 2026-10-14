@@ -172,9 +172,13 @@ export function updateNote(text: string, patch: NotePatch): NoteResult<string> {
       const [start] = range;
       // A block list's range runs on past its last line break: keep that.
       const end = start + parts.frontmatter.slice(start, range[1]).trimEnd().length;
-      // `key:` with nothing after it: the value starts right after the colon.
-      const space = start === end && parts.frontmatter[start - 1] === ':' ? ' ' : '';
-      edits.push({ start, end, text: space + inline(value) });
+      // An empty value: after `key:` it needs a space before it, and before a
+      // comment one after it, or the `#` would be read as part of the value.
+      const empty = start === end;
+      const before = empty && parts.frontmatter[start - 1] === ':' ? ' ' : '';
+      const next = parts.frontmatter[end] ?? '\n';
+      const after = empty && next !== '\n' && next !== '\r' ? ' ' : '';
+      edits.push({ start, end, text: before + inline(value) + after });
     } else {
       added +=
         eol +

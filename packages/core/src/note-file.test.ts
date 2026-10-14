@@ -280,6 +280,16 @@ describe('updateNote', () => {
     });
   });
 
+  it.each([['resolution: # later'], ['resolution:   # later'], ['resolution:\t# later']])(
+    'keeps a comment after an empty value a comment: %j',
+    (line) => {
+      const text = `---\nid: A\nschema: 1\nstatus: open\ncreated: '2026-10-09T18:42:11.204Z'\n${line}\n---\nBody.`;
+      const updated = value(updateNote(text, { resolution: 'fixed' }));
+      expect(updated).toBe(text.replace('# later', 'fixed # later'));
+      expect(value(parseNote(updated)).resolution).toBe('fixed');
+    },
+  );
+
   it('keeps CRLF line endings and a BOM', () => {
     const crlf = `\uFEFF${original.replace(/\n/g, '\r\n')}`;
     const updated = value(updateNote(crlf, { status: 'resolved', tags: ['a'] }));

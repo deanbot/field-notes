@@ -121,6 +121,20 @@ describe('resolve, wontfix and reopen', () => {
     );
   });
 
+  it('keeps a comment after an empty resolution', async () => {
+    const original = ORIGINAL.replace('resolution: null', 'resolution: # later');
+    const itemDir = await add(original, 'hand-edited');
+    await cli('resolve', '01JA8X', '--note', 'fixed');
+    expect(await text(itemDir)).toBe(
+      original
+        .replace('status: open #', 'status: resolved #')
+        .replace('resolution: #', 'resolution: fixed #'),
+    );
+    expect((await read(itemDir)).resolution).toBe('fixed');
+    await cli('reopen', '01JA8X');
+    expect(await text(itemDir)).toBe(original.replace('resolution: #', 'resolution: null #'));
+  });
+
   it.each([['yes'], ['2026-10-14'], ['0123'], ['Two lines:\nfirst, then second'], ['a: b # c']])(
     'keeps %j a string, as given',
     async (why) => {
