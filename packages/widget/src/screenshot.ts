@@ -81,6 +81,38 @@ function loadSandbox(): Sandbox | undefined {
   return { frame, loaded };
 }
 
+/**
+ * Whether the page lets the copy be drawn: it's drawn from a `data:` SVG
+ * image, which a Content Security Policy's `img-src` can block. The library
+ * would then draw nothing, without an error.
+ */
+function canDrawCopy(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = new Image();
+    probe.onload = () => {
+      resolve(true);
+    };
+    probe.onerror = () => {
+      resolve(false);
+    };
+    probe.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>')}`;
+  });
+}
+
+/**
+ * Takes back the library's move of `<body>`'s children by the page's scroll.
+ * In quirks mode `<body>` is what scrolls, and the page's scroll is already
+ * the offset on `<html>`. Each child gets the transform its copy had before
+ * the move, exactly: an identity one (`translateZ(0)`) still makes the child
+ * the containing block of its fixed descendants, and none must stay none.
+ */
+function unscrollBody(body: HTMLElement, before: WeakMap<Node, string>): void {
+  for (const child of body.children) {
+    const transform = before.get(child);
+    if (child instanceof HTMLElement && transform !== undefined) child.style.transform = transform;
+  }
+}
+
 const isTransparent = (color: string): boolean =>
   color === 'transparent' || /^rgba\(.*,\s*0\)$/.test(color);
 
@@ -102,11 +134,17 @@ function pageBackground(): string {
  */
 export function captureScreenshot(exclude: Element): Capture {
   const root = document.documentElement;
-  const { clientWidth: width, clientHeight: height } = root;
+  // The viewport, without scrollbars: <html>'s client box, or in quirks mode
+  // <body>'s, which is then the scrolling element.
+  const { clientWidth: width, clientHeight: height } = document.scrollingElement ?? root;
+  const quirks =
+    document.compatMode === 'BackCompat' && document.scrollingElement === document.body;
   const { scrollX: x, scrollY: y } = window;
   const scale = Math.min(devicePixelRatio, 2);
   // Masked areas when the copy starts and when it ends: both are painted.
   const rects = maskRects();
+  // Each copy's transform before the library moves it by its parent's scroll.
+  const transforms = new WeakMap<Node, string>();
   let context: Context<HTMLElement> | undefined;
   let cancelled = false;
   // A function: TypeScript would narrow the variable across the awaits.
@@ -134,7 +172,10 @@ export function captureScreenshot(exclude: Element): Capture {
       features: { restoreScrollPosition: true },
       filter: (node) =>
         node !== exclude && !(node instanceof HTMLIFrameElement && node.id.startsWith(SANDBOX_ID)),
-      onCloneEachNode: blank,
+      onCloneEachNode: (copy) => {
+        if (quirks && copy instanceof HTMLElement) transforms.set(copy, copy.style.transform);
+        blank(copy);
+      },
       onCloneNode: (copy) => {
         if (!(copy instanceof HTMLElement)) return;
         // The page's scroll as an offset on <html>: fixed elements stay put,
@@ -148,14 +189,21 @@ export function captureScreenshot(exclude: Element): Capture {
         });
         const body = copy.querySelector('body');
         if (body) body.style.transform = getComputedStyle(document.body).transform;
+        if (body && quirks) unscrollBody(body, transforms);
         rects.push(...maskRects());
         copied();
       },
     });
     // Without the frame in time, the library makes its own, as it would.
-    const [made, frame] = await Promise.all([making, sandbox?.loaded]);
+    const [made, frame, drawable] = await Promise.all([making, sandbox?.loaded, canDrawCopy()]);
     context = made;
     if (stopped()) return undefined;
+    if (!drawable) {
+      console.warn(
+        "[field-notes] this page's Content Security Policy blocks data: images, which the screenshot is drawn from; the note goes without it.",
+      );
+      return undefined;
+    }
     if (frame) made.sandbox = frame;
     Object.assign(made, { node: root, width, height });
     const canvas = await domToCanvas(made);
