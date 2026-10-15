@@ -19,7 +19,7 @@ export default defineConfig({
         test: {
           name: 'node',
           environment: 'node',
-          include: ['packages/{core,sink,cli}/src/**/*.test.ts'],
+          include: ['packages/{core,sink,cli}/src/**/*.test.ts', 'scripts/**/*.test.ts'],
           exclude: ['**/*.browser.test.ts'],
         },
       },
