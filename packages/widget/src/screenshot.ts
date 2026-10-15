@@ -204,7 +204,12 @@ export function captureScreenshot(
     const [made, frame, drawable] = await Promise.all([making, sandbox?.loaded, canDrawCopy()]);
     context = made;
     // The library only asks its window for computed styles.
-    if (!whole) made.ownerWindow = styleSource() as unknown as Window;
+    if (!whole) {
+      const source = styleSource();
+      made.ownerWindow = source as unknown as Window;
+      const { filter } = made;
+      made.filter = (node) => !source.leftOut(node) && (filter?.(node) ?? true);
+    }
     if (stopped()) return undefined;
     if (!drawable) {
       console.warn(

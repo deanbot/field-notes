@@ -22,9 +22,6 @@ transform translate rotate scale transform-origin`.split(/\s+/);
 const ITEM = `flex-grow flex-shrink flex-basis order align-self justify-self
 grid-column-start grid-column-end grid-row-start grid-row-end`.split(/\s+/);
 
-/** How a table lays out its rows and cells. */
-const TABLE = ['border-collapse', 'border-spacing', 'table-layout', 'caption-side'];
-
 /** How inline content flows: it shares its lines with what is seen. */
 const TEXT = `font-family font-size font-weight font-style font-stretch font-variant-caps
 font-variant-numeric font-variant-ligatures font-kerning font-size-adjust
@@ -41,6 +38,8 @@ type Styles = Pick<
 /** What stands in for the page's window: the library only asks it for computed styles. */
 export interface StyleSource {
   readonly getComputedStyle: (el: Element, pseudo?: string | null) => Styles;
+  /** Whether to leave `node` out of the copy: it's in a box whose content can't be seen or change anything else. */
+  readonly leftOut: (node: Node) => boolean;
 }
 
 /** SVG that draws nothing where it is, but wherever it's referenced from. */
@@ -56,8 +55,35 @@ const SVG_RESOURCES = new Set([
   'marker',
 ]);
 
-const parentOf = (el: Element): Element | null =>
-  el.parentElement ?? (el.parentNode instanceof ShadowRoot ? el.parentNode.host : null);
+const parentOf = (node: Node): Element | null =>
+  node.parentElement ?? (node.parentNode instanceof ShadowRoot ? node.parentNode.host : null);
+
+/** Whether an item of a container in view is lined up with the others by its content's baseline. */
+function linedUp(real: CSSStyleDeclaration, parent: Element, parentDisplay: string): boolean {
+  if (parentDisplay === 'table-row') return real.getPropertyValue('vertical-align') === 'baseline';
+  if (!/flex|grid/.test(parentDisplay)) return false;
+  const self = real.getPropertyValue('align-self');
+  return (
+    self.includes('baseline') ||
+    (self === 'auto' && getComputedStyle(parent).alignItems.includes('baseline'))
+  );
+}
+
+/**
+ * Whether a box out of view, held at its size, keeps its content to itself:
+ * a table row (the cells in view keep the columns' widths), or a box that
+ * lays out its content on its own (no margins collapse through it, no floats
+ * leave it).
+ */
+function selfContained(real: CSSStyleDeclaration, display: string): boolean {
+  if (display === 'table-row') return true;
+  return (
+    /^(flow-root|flex|grid|table|table-cell|table-caption)$/.test(display) ||
+    /absolute|fixed/.test(real.getPropertyValue('position')) ||
+    real.getPropertyValue('float') !== 'none' ||
+    !/visible|clip/.test(real.getPropertyValue('overflow-x'))
+  );
+}
 
 /** Elements whose box, or a descendant's, comes near the viewport, and SVG resources. */
 function nearView(): WeakSet<Element> {
@@ -117,18 +143,25 @@ const NO_PSEUDO: Styles = {
  * Computed styles for the library to copy, read now for where things are.
  * Elements near the viewport give every property; the rest give their box,
  * clipped to it, plus where a seen flex or grid container puts them, and
- * how their text flows if it shares lines with what is seen. Their
- * pseudo-elements are left out, unless they're in such lines.
+ * how their text flows if it shares lines or a baseline with what is seen.
+ * Their pseudo-elements are left out otherwise, and so is the content of a
+ * box that keeps it to itself.
  */
 export function styleSource(): StyleSource {
   const near = nearView();
   const every = [...getComputedStyle(document.documentElement)].filter(
     (name) => !name.startsWith('--'),
   );
-  // Elements whose text shares lines with what is seen. The library copies
-  // a parent before its children.
+  // Elements whose text shares lines, or a baseline, with what is seen. The
+  // library copies a parent before its children.
   const flowing = new WeakSet<Element>();
+  // Out of view, at their size, keeping their content to themselves.
+  const emptied = new WeakSet<Element>();
   return {
+    leftOut: (node) => {
+      const parent = parentOf(node);
+      return parent !== null && emptied.has(parent);
+    },
     getComputedStyle: (el, pseudo) => {
       if (pseudo && !near.has(el) && !flowing.has(el)) return NO_PSEUDO;
       const real = getComputedStyle(el, pseudo);
@@ -137,11 +170,17 @@ export function styleSource(): StyleSource {
       const display = real.getPropertyValue('display');
       const parent = parentOf(el);
       const seenParent = parent !== null && near.has(parent);
+      const parentDisplay = seenParent ? getComputedStyle(parent).display : '';
       const inline = display.startsWith('inline') || display.startsWith('ruby');
-      if (seenParent ? inline : parent !== null && flowing.has(parent)) flowing.add(el);
+      if (
+        seenParent
+          ? inline || linedUp(real, parent, parentDisplay)
+          : parent !== null && flowing.has(parent)
+      )
+        flowing.add(el);
+      if (!flowing.has(el) && selfContained(real, display)) emptied.add(el);
       const names = [...BOX];
-      if (seenParent && /flex|grid/.test(getComputedStyle(parent).display)) names.push(...ITEM);
-      if (display.endsWith('table')) names.push(...TABLE);
+      if (seenParent && /flex|grid/.test(parentDisplay)) names.push(...ITEM);
       if (flowing.has(el)) names.push(...TEXT);
       // Clipped to its box, so text that no longer fits it can't reach into view.
       return listed(names, real, { 'clip-path': 'inset(0px)' });

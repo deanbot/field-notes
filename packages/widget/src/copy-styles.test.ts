@@ -40,6 +40,7 @@ const VARIED = `
     section { margin: 0 8px; }
     h2 { margin: 24px 0 12px; font: bold 22px sans-serif; }
     table { border-collapse: collapse; }
+    table.lined td { vertical-align: baseline; }
     td { border: 3px solid rgb(200, 0, 0); padding: 2px 9px; }
     .wide { font: italic bold 26px monospace; letter-spacing: 4px; }
     .row { display: flex; gap: 10px; width: 3200px; }
@@ -55,15 +56,22 @@ const VARIED = `
     .shadow { height: 20px; box-shadow: 0 60px 0 20px rgb(250, 160, 0); }
     li { list-style-position: inside; }
     .tall { height: 1200px; }
+    .base { display: flex; align-items: baseline; width: 3200px; }
+    .big { display: flow-root; width: 1000px; font-size: 60px; }
+    .side { width: 400px; text-align: right; }
   </style>
   <section>
     <h2>Collapsing into the section</h2>
     <ol>${repeat(40, (i) => `<li>item <i>${String(i)}</i></li>`)}</ol>
   </section>
+  <div style="overflow: hidden"><p style="margin: 40px 0">kept to itself</p></div>
+  <table>${repeat(20, () => '<tr><td>collapsed</td></tr>')}</table>
   <table>
     <tr><td class="wide">the widest cell, far above</td><td>b</td></tr>
     ${repeat(200, (i) => `<tr><td>row ${String(i)}</td><td><b>x</b></td></tr>`)}
   </table>
+  <div class="base"><div class="big">Big</div><div class="side">lined up</div></div>
+  <table class="lined" style="width: 1500px"><tr><td class="big">Big</td><td class="side">lined up</td></tr></table>
   <p class="long">${repeat(60, (i) => `<b>word<i>${String(i)}</i></b> and some text `)}</p>
   <div class="row">${repeat(30, () => '<div></div>')}<div class="grow"></div></div>
   <div class="grid">${repeat(40, () => '<div></div>')}<div class="placed"></div></div>
