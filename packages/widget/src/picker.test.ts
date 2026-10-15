@@ -208,6 +208,25 @@ describe('the element picker', () => {
     expect((await submitted()).element).toBeUndefined();
   });
 
+  it('keeps the form inside the panel with a long pick and a screenshot', async () => {
+    page(
+      `<button class="order" style="margin:24px">Place your order for the dot grid notebook</button>`,
+    );
+    await mount({ screenshot: 'dom' }).open();
+    await vi.waitFor(() => shadow().querySelector('.shot img'));
+    await startPicking();
+    tap(find('.order'));
+    await back();
+    await vi.waitFor(() => shadow().querySelector('.shot img'));
+    const panel = dialog()?.getBoundingClientRect();
+    if (!panel) throw new Error('no panel');
+    for (const el of shadow().querySelectorAll('.actions > *')) {
+      const box = el.getBoundingClientRect();
+      expect(box.right, el.className).toBeLessThanOrEqual(panel.right);
+      expect(box.left, el.className).toBeGreaterThanOrEqual(panel.left);
+    }
+  });
+
   it("never picks the widget's own UI", async () => {
     page(`<div style="position:fixed;inset:0;background:#eee"></div>`);
     await mount({ trigger: ['button'], surface: 'sheet' }).open();

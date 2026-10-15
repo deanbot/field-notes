@@ -131,7 +131,8 @@ textarea:focus-visible, input[type='text']:focus-visible, .chip input:focus-visi
 }
 .chip input:checked + span { color: var(--_bg); background: var(--_accent); border-color: var(--_accent); }
 .error { margin: 0; min-height: 1em; font-size: 12px; color: var(--field-notes-error, light-dark(#cf222e, #f85149)); }
-.actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+/* A grid item: without min-width, a long pick label widens it past the panel. */
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
 .hint { font-size: 12px; opacity: 0.75; }
 .primary {
   padding: 6px 14px;
