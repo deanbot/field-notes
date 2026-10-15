@@ -70,10 +70,11 @@ test('a note left while the sink is down waits, and lands once when it is back',
   }
   // Failed fetches log the browser's own network errors, and WebKit reports
   // one as a page error even when it's caught. The widget adds nothing.
+  const webkitFetch = (line: string): boolean =>
+    browserName === 'webkit' && line.endsWith('due to access control checks.');
   const unexpected = seen.filter(
     (line) =>
-      (line.startsWith('pageerror') && !line.endsWith('due to access control checks.')) ||
-      line.includes('[field-notes]'),
+      (line.startsWith('pageerror') && !webkitFetch(line)) || line.includes('[field-notes]'),
   );
   expect(unexpected).toEqual([]);
 });
