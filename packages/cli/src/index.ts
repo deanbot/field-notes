@@ -24,6 +24,7 @@ import { FORMATS, type Format, digest } from './export.ts';
 import { type Backlog, type Item, findNote, readBacklog } from './notes.ts';
 import { serve } from './serve.ts';
 import { PRUNABLE, prune, resolutionOf, setStatus } from './status.ts';
+import { tail } from './tail.ts';
 
 export interface CliIo {
   version: string;
@@ -31,7 +32,7 @@ export interface CliIo {
   stderr: (text: string) => void;
   /** The script-tag build that `serve` hands out, with its token placeholder. */
   widgetScript: () => Promise<string>;
-  /** Stops a long-running command (`serve`): Ctrl+C. */
+  /** Stops a long-running command (`serve`, `tail`): Ctrl+C. */
   signal: AbortSignal;
   /** The time, for `--since` and `prune`; `Date.now` if not given. */
   now?: () => number;
@@ -53,6 +54,11 @@ Commands:
            Add the notes in a zip exported from the widget to --dir
            --dir <path> Where notes go (default .field-notes)
            Notes already there are skipped, so importing again is safe.
+  tail     Print each new note as it lands in --dir, until Ctrl+C
+           --json        Print each as one line of JSON
+           --since <t>   Also print notes already there, created in the
+                         last 30m, 12h, 2d or 1w, or since a date
+           --dir <path>  Where notes are (default .field-notes)
   list     List notes in --dir, oldest first
            --status <s>  open (default), resolved, wontfix or all (repeatable)
            --type <t>    Only this type (repeatable; any case)
@@ -179,6 +185,25 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
       return 2;
     }
     return runImport(zip, values.dir ?? '.field-notes', io);
+  }
+  if (command === 'tail') {
+    if (positionals.length > 1) {
+      io.stderr(`tail takes no arguments\n\n${USAGE}`);
+      return 2;
+    }
+    const filters = parseFilters({ since: values.since }, (io.now ?? Date.now)());
+    if (!filters.ok) {
+      io.stderr(`${filters.error}\n`);
+      return 2;
+    }
+    return tail({
+      root: resolve(values.dir ?? '.field-notes'),
+      json: values.json ?? false,
+      since: filters.value.since,
+      signal: io.signal,
+      stdout: io.stdout,
+      stderr: io.stderr,
+    });
   }
   if (command === 'list') {
     if (positionals.length > 1) {
@@ -404,6 +429,7 @@ async function runPrune(
 const OPTIONS: Readonly<Record<string, readonly string[]>> = {
   serve: ['port', 'dir', 'origin'],
   import: ['dir'],
+  tail: ['json', 'since', 'dir'],
   list: ['status', 'type', 'author', 'route', 'since', 'group-by', 'json', 'dir'],
   show: ['json', 'dir'],
   export: ['status', 'type', 'author', 'route', 'since', 'group-by', 'format', 'out', 'dir'],

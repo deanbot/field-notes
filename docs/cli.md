@@ -56,6 +56,23 @@ The CLI reads only `items/*/note.md`, and finds notes by the `id` in `note.md`, 
 - Symlinked directories aren't followed.
 - If `items/` doesn't exist, there are no notes, and that isn't an error.
 
+## Following new notes
+
+```
+field-notes tail [--json] [--since 2d] [--dir <path>]
+```
+
+`tail` prints each note as it lands in `items/`, once, until Ctrl+C. Run it in an agent's session, or anywhere that should act on notes as they come.
+
+- **Without `--json`,** each note is one line: id, type, route and the body's first line, with `-` for a field it doesn't have.
+- **With `--json`,** each note is one line of JSON, in the [`--json` shape](#--json).
+- **`--since`** first prints the notes already there that were created since then, as `list --since` would, then follows new ones. Use it rather than `list` followed by `tail`, which misses a note that lands between the two.
+- **Messages go to stderr:** `Watching …` once it's watching, `Skipped …` for a note that isn't valid (it's printed if it's fixed), and `Waiting for …` when `items/` doesn't exist yet.
+- **A new note** is a directory in `items/` that wasn't there when `tail` started, printed once its `note.md` is there. Notes changed by `resolve`, `wontfix` or `reopen` aren't printed again.
+- **When the reader goes away,** as with `field-notes tail --json | head -1`, `tail` exits with 0 the next time it prints.
+
+`tail` uses a recursive file watch. Each change sends it to read `items/` again for directories it hasn't seen, so a burst of notes, or events the system merges or drops, can't lose a note or print one twice.
+
 ## Digests
 
 ```
