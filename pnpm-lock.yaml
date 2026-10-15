@@ -232,7 +232,7 @@ importers:
 
   examples/next:
     dependencies:
-      field-notes:
+      '@deanbot/field-notes':
         specifier: workspace:*
         version: link:../../packages/field-notes
       next:
@@ -260,7 +260,7 @@ importers:
 
   examples/vite-vue:
     dependencies:
-      field-notes:
+      '@deanbot/field-notes':
         specifier: workspace:*
         version: link:../../packages/field-notes
       vue:

@@ -213,7 +213,7 @@ async function consumerBuild(source: string): Promise<Rolldown.OutputChunk[]> {
     configFile: false,
     logLevel: 'silent',
     mode: 'production',
-    resolve: { alias: { 'field-notes': join(dist, 'index.js') } },
+    resolve: { alias: { '@deanbot/field-notes': join(dist, 'index.js') } },
     plugins: [
       {
         name: 'entry',
@@ -229,7 +229,7 @@ async function consumerBuild(source: string): Promise<Rolldown.OutputChunk[]> {
 
 await check("a consumer's production build drops a DEV-guarded widget", async () => {
   const chunks = await consumerBuild(
-    `import { mountFieldNotes } from 'field-notes';\nif (import.meta.env.DEV) mountFieldNotes();\nconsole.log('app');`,
+    `import { mountFieldNotes } from '@deanbot/field-notes';\nif (import.meta.env.DEV) mountFieldNotes();\nconsole.log('app');`,
   );
   const code = chunks.map((chunk) => chunk.code).join('');
   assert(chunks.length === 1, `expected one chunk, got ${String(chunks.length)}`);
@@ -239,7 +239,7 @@ await check("a consumer's production build drops a DEV-guarded widget", async ()
 
 await check("a consumer's production build resolves enabled: 'auto' to off", async () => {
   const chunks = await consumerBuild(
-    `import { mountFieldNotes } from 'field-notes';\nmountFieldNotes();`,
+    `import { mountFieldNotes } from '@deanbot/field-notes';\nmountFieldNotes();`,
   );
   const code = chunks.map((chunk) => chunk.code).join('');
   assert(code.includes('field-notes'), 'the widget is missing');
@@ -250,7 +250,7 @@ await check(
   "a consumer's production build with enabled: 'query' ships only the stub until ?field-notes=1",
   async () => {
     const chunks = await consumerBuild(
-      `import { mountFieldNotes } from 'field-notes';\nmountFieldNotes({ enabled: 'query' });`,
+      `import { mountFieldNotes } from '@deanbot/field-notes';\nmountFieldNotes({ enabled: 'query' });`,
     );
     const entry = chunks.find((chunk) => chunk.isEntry);
     assert(entry, 'no entry chunk');
@@ -310,7 +310,7 @@ await check(
   "a consumer's production build in export mode downloads a zip of the notes, sending nothing, and `field-notes import` takes it once",
   async () => {
     const chunks = await consumerBuild(
-      `import { mountFieldNotes } from 'field-notes';\nwindow.fieldNotes = mountFieldNotes({ enabled: true, mode: 'export' });`,
+      `import { mountFieldNotes } from '@deanbot/field-notes';\nwindow.fieldNotes = mountFieldNotes({ enabled: true, mode: 'export' });`,
     );
     const entry = chunks.find((chunk) => chunk.isEntry);
     assert(entry, 'no entry chunk');
@@ -435,7 +435,7 @@ const DISPLAY_E2E =
 if (process.env.CI) {
   await check(DISPLAY_E2E, async () => {
     const chunks = await consumerBuild(
-      `import { mountFieldNotes } from 'field-notes';\nwindow.fieldNotes = mountFieldNotes({ enabled: true, mode: 'export', screenshot: 'display' });`,
+      `import { mountFieldNotes } from '@deanbot/field-notes';\nwindow.fieldNotes = mountFieldNotes({ enabled: true, mode: 'export', screenshot: 'display' });`,
     );
     const entry = chunks.find((chunk) => chunk.isEntry);
     assert(entry, 'no entry chunk');

@@ -20,7 +20,7 @@ Libraries like `focus-trap` with their defaults also **block every click outside
 Pause your trap while the widget is open with `onOpen` and `onClose`:
 
 ```js
-import { mountFieldNotes } from 'field-notes';
+import { mountFieldNotes } from '@deanbot/field-notes';
 
 mountFieldNotes({
   onOpen: () => myTrap.pause(),

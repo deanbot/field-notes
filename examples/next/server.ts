@@ -2,7 +2,7 @@
 // Next's own handler. Next's `proxy.ts` runs where it can't write files, and
 // App Router doesn't route folders starting with `_`, such as `__field-notes`.
 import { createServer } from 'node:http';
-import { fieldNotesMiddleware } from 'field-notes/middleware';
+import { fieldNotesMiddleware } from '@deanbot/field-notes/middleware';
 import next from 'next';
 
 const port = Number(process.env.PORT ?? 3000);

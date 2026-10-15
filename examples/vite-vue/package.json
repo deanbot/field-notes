@@ -10,7 +10,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "field-notes": "workspace:*",
+    "@deanbot/field-notes": "workspace:*",
     "vue": "3.5.43"
   },
   "devDependencies": {
