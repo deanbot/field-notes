@@ -528,6 +528,8 @@ describe('the screenshot in the widget', () => {
       readonly hiddenAtGrab: string[];
       /** The box of each element the share was cropped to. */
       readonly cropped: DOMRect[];
+      /** The tracks a MediaStreamTrackProcessor (stubbed when `resends`) was made for. */
+      readonly readers: MediaStreamTrack[];
       readonly answer: () => void;
     }
     function share(
@@ -539,6 +541,12 @@ describe('the screenshot in the widget', () => {
         gesture?: boolean;
         /** Where the tab shows masked content in red. Default: the password field. */
         secrets?: () => DOMRect[];
+        /** As if the tab never sent a frame. */
+        frameless?: boolean;
+        /** As if the tab sent its frame again only once the track had a new reader. */
+        resends?: boolean;
+        /** As if cropping never finished. */
+        cropHangs?: boolean;
       } = {},
     ): Share {
       const {
@@ -546,12 +554,16 @@ describe('the screenshot in the widget', () => {
         later = false,
         regionCapture = true,
         gesture = true,
+        frameless = false,
+        resends = false,
+        cropHangs = false,
         secrets = () =>
           [...document.querySelectorAll('input[type="password"]')].map((el) =>
             el.getBoundingClientRect(),
           ),
       } = how;
       const cropped: DOMRect[] = [];
+      readers.length = 0;
       vi.stubGlobal(
         'CropTarget',
         regionCapture
@@ -593,14 +605,42 @@ describe('the screenshot in the widget', () => {
         await answered;
         if (reply === 'deny') throw new DOMException('Permission denied', 'NotAllowedError');
         draw();
-        const stream = tab.captureStream();
+        // At no frame rate, a canvas never drawn on sends no frame, until asked.
+        const still = document.createElement('canvas');
+        still.width = tab.width;
+        still.height = tab.height;
+        const stream = frameless || resends ? still.captureStream(0) : tab.captureStream();
+        if (resends) {
+          const [sent] = stream.getVideoTracks() as (MediaStreamTrack & {
+            requestFrame: () => void;
+          })[];
+          readers.length = 0;
+          vi.stubGlobal(
+            'MediaStreamTrackProcessor',
+            function (this: object, { track }: { track: MediaStreamTrack }) {
+              readers.push(track);
+              still.getContext('2d')?.drawImage(tab, 0, 0);
+              sent?.requestFrame();
+              return {
+                readable: {
+                  getReader: () => ({
+                    read: () => new Promise(() => undefined),
+                    cancel: () => Promise.resolve(),
+                  }),
+                },
+              };
+            },
+          );
+        }
         tracks.push(...stream.getTracks());
         for (const track of stream.getVideoTracks()) {
           Object.assign(track, {
             cropTo: () =>
-              reply === 'other'
-                ? Promise.reject(new DOMException('not this tab', 'NotSupportedError'))
-                : Promise.resolve(),
+              cropHangs
+                ? new Promise(() => undefined)
+                : reply === 'other'
+                  ? Promise.reject(new DOMException('not this tab', 'NotSupportedError'))
+                  : Promise.resolve(),
           });
         }
         return stream;
@@ -618,8 +658,9 @@ describe('the screenshot in the widget', () => {
         }
         drawImage.apply(this, args);
       });
-      return { ask, tracks, hiddenAtGrab, cropped, answer: release };
+      return { ask, tracks, hiddenAtGrab, cropped, answer: release, readers };
     }
+    const readers: MediaStreamTrack[] = [];
     const trigger = (): HTMLElement => {
       const found = shadow().querySelector<HTMLElement>('.trigger');
       if (!found) throw new Error('no trigger');
@@ -703,6 +744,84 @@ describe('the screenshot in the widget', () => {
       expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
       expect(stopped(tracks)).toBe(true);
     });
+
+    it.runIf(plays)(
+      'takes the DOM screenshot when the share sends no frame, or never crops',
+      async () => {
+        for (const how of [{ frameless: true }, { cropHangs: true }]) {
+          page(`<p>The page</p>`);
+          const { tracks } = share(how);
+          mount({ screenshot: 'display' });
+          await userEvent.click(trigger());
+          await vi.waitFor(
+            () => {
+              expect(thumb()?.src).toMatch(/^blob:/);
+            },
+            { timeout: 5000 },
+          );
+          expect(screenshotModule.captureScreenshot).toHaveBeenCalledOnce();
+          expect(stopped(tracks)).toBe(true);
+          handle?.unmount();
+          vi.mocked(screenshotModule.captureScreenshot).mockClear();
+        }
+      },
+      15_000,
+    );
+
+    it.runIf(plays)(
+      'has the tab send its frame again when the video is left waiting for it, and stops reading',
+      async () => {
+        page(`<p>The page</p>`);
+        const { tracks } = share({ resends: true });
+        mount({ screenshot: 'display' });
+        await userEvent.click(trigger());
+        await vi.waitFor(
+          () => {
+            expect(thumb()?.src).toMatch(/^blob:/);
+          },
+          { timeout: 5000 },
+        );
+        expect(screenshotModule.captureScreenshot).not.toHaveBeenCalled();
+        expect(readers).toHaveLength(1);
+        expect(readers[0]?.readyState).toBe('ended');
+        expect(stopped(tracks)).toBe(true);
+      },
+      15_000,
+    );
+
+    it.runIf(plays)(
+      'repaints a pixel of the page while it waits on the share, and stops',
+      async () => {
+        page(`<p>The page</p>`);
+        const { ask } = share({ cropHangs: true });
+        mount({ screenshot: 'display' });
+        await userEvent.click(trigger());
+        await vi.waitFor(() => {
+          expect(ask).toHaveBeenCalledOnce();
+        });
+        const dot = (): HTMLElement | undefined =>
+          [...shadow().children].find(
+            (el): el is HTMLElement => el instanceof HTMLElement && el.style.width === '1px',
+          );
+        await vi.waitFor(() => {
+          expect(dot()).toBeDefined();
+        });
+        const seen = new Set<string>();
+        for (let i = 0; i < 6; i++) {
+          seen.add(dot()?.style.opacity ?? 'gone');
+          await new Promise(requestAnimationFrame);
+        }
+        expect([...seen].sort()).toEqual(['0', '0.01']);
+        await vi.waitFor(
+          () => {
+            expect(thumb()?.src).toMatch(/^blob:/);
+          },
+          { timeout: 5000 },
+        );
+        expect(dot()).toBeUndefined();
+      },
+      15_000,
+    );
 
     it('goes without, quietly, when the user declines', async () => {
       page(`<p>The page</p>`);
