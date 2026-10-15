@@ -8,6 +8,8 @@ coverage/
 playwright-report/
 test-results/
 .vitest/
+.next/
+next-env.d.ts
 
 # Copied from the repo root by the field-notes prepack script
 packages/field-notes/README.md

@@ -22,7 +22,7 @@
     "verify": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:coverage && pnpm check:package && pnpm size && pnpm check:dist && pnpm knip && pnpm smoke",
     "changeset": "changeset",
     "release": "pnpm build && changeset publish",
-    "e2e": "pnpm build && pnpm --filter @field-notes/example-vite-vue build && pnpm --filter @field-notes/example-vite-vue build:export && playwright test"
+    "e2e": "pnpm build && pnpm --filter @field-notes/example-vite-vue build && pnpm --filter @field-notes/example-vite-vue build:export && pnpm --filter @field-notes/example-next build && playwright test"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
