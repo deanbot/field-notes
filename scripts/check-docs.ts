@@ -46,7 +46,8 @@ function codeOf(text: string): string[] {
 
 // `field-notes <command>`, run directly or through npx or pnpm, but not
 // `field-notes-<date>.zip`, `field-notes/vite` or `--field-notes-accent`.
-const COMMAND = /(?:^|[\s$(`'"])(?:npx\s+|pnpm\s+(?:exec\s+)?)?field-notes\s+([a-z][a-z-]*)(.*)$/;
+const COMMAND =
+  /(?:^|[\s$(`'"])(?:npx\s+(?:@deanbot\/)?|pnpm\s+(?:exec\s+)?)?field-notes\s+([a-z][a-z-]*)(.*)$/;
 
 /** The CLI command and options on a line of code, if it runs one. */
 function commandOn(line: string): { command: string; options: string[] } | undefined {

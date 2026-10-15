@@ -28,7 +28,7 @@ These are examples, not a complete list. Each has a recipe with the details, and
 ## Install
 
 ```sh
-npm install --save-dev field-notes
+npm install --save-dev @deanbot/field-notes
 ```
 
 Then add the widget and somewhere for notes to go. Pick whichever fits your stack.
@@ -37,14 +37,14 @@ Then add the widget and somewhere for notes to go. Pick whichever fits your stac
 
 ```ts
 // vite.config.ts
-import { fieldNotes } from 'field-notes/vite';
+import { fieldNotes } from '@deanbot/field-notes/vite';
 
 export default { plugins: [fieldNotes()] };
 ```
 
 ```ts
 // your app's entry
-import { mountFieldNotes } from 'field-notes';
+import { mountFieldNotes } from '@deanbot/field-notes';
 
 if (import.meta.env.DEV) mountFieldNotes();
 ```
@@ -54,7 +54,7 @@ if (import.meta.env.DEV) mountFieldNotes();
 **Express, Connect or a custom Node server.** Mount the middleware before any body parser. It stands aside when `NODE_ENV` is `production`:
 
 ```ts
-import { fieldNotesMiddleware } from 'field-notes/middleware';
+import { fieldNotesMiddleware } from '@deanbot/field-notes/middleware';
 
 app.use(fieldNotesMiddleware());
 ```
@@ -63,7 +63,7 @@ app.use(fieldNotesMiddleware());
 
 ```tsx
 'use client';
-import { defineFieldNotes } from 'field-notes';
+import { defineFieldNotes } from '@deanbot/field-notes';
 import { useEffect } from 'react';
 
 const dev = process.env.NODE_ENV === 'development';
@@ -83,7 +83,7 @@ TypeScript needs `<field-notes>` declared for JSX; [`examples/next/app/custom-el
 **No build step, or no npm.** `field-notes serve` runs the sink on its own and serves the widget as a script tag:
 
 ```sh
-npx field-notes serve --port 4747
+npx @deanbot/field-notes serve --port 4747
 ```
 
 ```html

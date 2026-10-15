@@ -1,5 +1,5 @@
 import vue from '@vitejs/plugin-vue';
-import { fieldNotes } from 'field-notes/vite';
+import { fieldNotes } from '@deanbot/field-notes/vite';
 import { defineConfig } from 'vite';
 
 // `vite` takes notes into .field-notes/ through the plugin (local mode).

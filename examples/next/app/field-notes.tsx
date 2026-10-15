@@ -1,6 +1,6 @@
 'use client';
 
-import { defineFieldNotes } from 'field-notes';
+import { defineFieldNotes } from '@deanbot/field-notes';
 import { useEffect } from 'react';
 
 const dev = process.env.NODE_ENV === 'development';

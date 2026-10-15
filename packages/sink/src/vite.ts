@@ -1,4 +1,4 @@
-// `field-notes/vite`: mounts the sink on Vite's dev server. Dev only
+// `@deanbot/field-notes/vite`: mounts the sink on Vite's dev server. Dev only
 // (`apply: 'serve'`), and nothing happens until the dev server starts, so
 // `vite build` and `vite preview` never touch `.field-notes/`.
 import { resolve } from 'node:path';

@@ -1,4 +1,4 @@
-// `field-notes/middleware`: mounts the sink on a Connect or Express dev
+// `@deanbot/field-notes/middleware`: mounts the sink on a Connect or Express dev
 // server. In production it stands aside, unless forced.
 import { resolve } from 'node:path';
 import { type SinkHandler, createSinkHandler } from './handler.ts';

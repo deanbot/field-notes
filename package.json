@@ -7,14 +7,14 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "build": "pnpm --filter field-notes build",
+    "build": "pnpm --filter @deanbot/field-notes build",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "check:package": "pnpm --filter field-notes check:package",
+    "check:package": "pnpm --filter @deanbot/field-notes check:package",
     "size": "size-limit",
     "knip": "knip",
     "check:dist": "node scripts/check-dist.ts",

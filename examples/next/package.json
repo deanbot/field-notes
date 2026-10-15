@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "field-notes": "workspace:*",
+    "@deanbot/field-notes": "workspace:*",
     "next": "16.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"

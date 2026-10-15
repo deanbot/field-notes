@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineFieldNotes } from 'field-notes';
+import { defineFieldNotes } from '@deanbot/field-notes';
 
 // <field-notes> below carries the widget once this has run. App.vue loads
 // this component only in dev and export builds, so any other production

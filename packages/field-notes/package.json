@@ -1,5 +1,5 @@
 {
-  "name": "field-notes",
+  "name": "@deanbot/field-notes",
   "version": "1.0.0",
   "description": "Rapid, in-context feedback capture for any web app. Notes land as files in your repo, readable by people and agents.",
   "keywords": [
@@ -18,6 +18,9 @@
     "directory": "packages/field-notes"
   },
   "homepage": "https://github.com/deanbot/field-notes#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "bugs": "https://github.com/deanbot/field-notes/issues",
   "type": "module",
   "sideEffects": false,

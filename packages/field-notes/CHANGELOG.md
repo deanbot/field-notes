@@ -1,4 +1,4 @@
-# field-notes
+# @deanbot/field-notes
 
 ## 1.0.0
 
@@ -53,8 +53,8 @@
   The widget sends notes to the sink once it has a `token` (and an `endpoint`, default `/__field-notes`): oldest first, retrying with backoff while the sink is down and on `online`/`visibilitychange`, without storing a note twice. A note the sink refuses for good shows as rejected in "My notes". Delivered notes leave the outbox after 7 days.
 
 - 7676bb8: Add `enabled: 'query'` for demo and staging builds: the widget stays off, with only the activation stub loaded, until a page is opened with `?field-notes=1`. It then stays on in that browser until `?field-notes=0`. Where storage is blocked, `?field-notes=1` turns it on for that page only.
-- 1f51fe2: Add the local sink's request handler, `createSinkHandler` from `field-notes/sink`. It accepts notes at `POST /__field-notes` from allowed origins (localhost and loopback by default) carrying the sink's token. It enforces a size limit and writes each note to `.field-notes/items/<id>-<slug>/` under an id it assigns, with `note.md` written last. A resend with the same `clientId` returns the first receipt instead of storing the note twice.
-- 68be3f7: Add `field-notes/vite`, a Vite plugin that takes notes at `/__field-notes` on the dev server (dev only; `vite build` is untouched). Add `field-notes/middleware` for Connect and Express dev servers; with `NODE_ENV=production` it passes every request on unless `force: true`. Both keep notes in `.field-notes/` and accept `dir` and `origins` options.
+- 1f51fe2: Add the local sink's request handler, `createSinkHandler` from `@deanbot/field-notes/sink`. It accepts notes at `POST /__field-notes` from allowed origins (localhost and loopback by default) carrying the sink's token. It enforces a size limit and writes each note to `.field-notes/items/<id>-<slug>/` under an id it assigns, with `note.md` written last. A resend with the same `clientId` returns the first receipt instead of storing the note twice.
+- 68be3f7: Add `@deanbot/field-notes/vite`, a Vite plugin that takes notes at `/__field-notes` on the dev server (dev only; `vite build` is untouched). Add `@deanbot/field-notes/middleware` for Connect and Express dev servers; with `NODE_ENV=production` it passes every request on unless `force: true`. Both keep notes in `.field-notes/` and accept `dir` and `origins` options.
 
   A widget on the same server, opened on this machine, needs no options: it asks the sink there for its token. A page on another device needs `token` given. Delivery code now loads whenever a note is waiting.
 

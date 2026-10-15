@@ -7,7 +7,7 @@ Someone preparing a demo, or reviewing a release on staging, notes what should c
 Mount the widget in export mode, switched on by a query parameter, so visitors who don't know about it never see it:
 
 ```ts
-import { mountFieldNotes } from 'field-notes';
+import { mountFieldNotes } from '@deanbot/field-notes';
 
 mountFieldNotes({ mode: 'export', enabled: 'query' });
 ```
