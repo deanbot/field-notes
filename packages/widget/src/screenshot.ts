@@ -102,17 +102,14 @@ function canDrawCopy(): Promise<boolean> {
 /**
  * Takes back the library's move of `<body>`'s children by the page's scroll.
  * In quirks mode `<body>` is what scrolls, and the page's scroll is already
- * the offset on `<html>`. The library only translated each child, so adding
- * the scroll back restores its transform; none stays none, since any other
- * transform would give fixed descendants a new containing block.
+ * the offset on `<html>`. Each child gets the transform its copy had before
+ * the move, exactly: an identity one (`translateZ(0)`) still makes the child
+ * the containing block of its fixed descendants, and none must stay none.
  */
-function unscrollBody(body: HTMLElement, x: number, y: number): void {
+function unscrollBody(body: HTMLElement, before: WeakMap<Node, string>): void {
   for (const child of body.children) {
-    if (!(child instanceof HTMLElement) || !child.style.transform) continue;
-    const matrix = new DOMMatrix(child.style.transform);
-    matrix.e += x;
-    matrix.f += y;
-    child.style.transform = matrix.isIdentity ? '' : matrix.toString();
+    const transform = before.get(child);
+    if (child instanceof HTMLElement && transform !== undefined) child.style.transform = transform;
   }
 }
 
@@ -146,6 +143,8 @@ export function captureScreenshot(exclude: Element): Capture {
   const scale = Math.min(devicePixelRatio, 2);
   // Masked areas when the copy starts and when it ends: both are painted.
   const rects = maskRects();
+  // Each copy's transform before the library moves it by its parent's scroll.
+  const transforms = new WeakMap<Node, string>();
   let context: Context<HTMLElement> | undefined;
   let cancelled = false;
   // A function: TypeScript would narrow the variable across the awaits.
@@ -173,7 +172,10 @@ export function captureScreenshot(exclude: Element): Capture {
       features: { restoreScrollPosition: true },
       filter: (node) =>
         node !== exclude && !(node instanceof HTMLIFrameElement && node.id.startsWith(SANDBOX_ID)),
-      onCloneEachNode: blank,
+      onCloneEachNode: (copy) => {
+        if (quirks && copy instanceof HTMLElement) transforms.set(copy, copy.style.transform);
+        blank(copy);
+      },
       onCloneNode: (copy) => {
         if (!(copy instanceof HTMLElement)) return;
         // The page's scroll as an offset on <html>: fixed elements stay put,
@@ -187,7 +189,7 @@ export function captureScreenshot(exclude: Element): Capture {
         });
         const body = copy.querySelector('body');
         if (body) body.style.transform = getComputedStyle(document.body).transform;
-        if (body && quirks && (x || y)) unscrollBody(body, x, y);
+        if (body && quirks) unscrollBody(body, transforms);
         rects.push(...maskRects());
         copied();
       },

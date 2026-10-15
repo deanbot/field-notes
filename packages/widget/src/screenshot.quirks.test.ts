@@ -69,3 +69,19 @@ it('shows the viewport as it is seen: scrolled both ways, fixed (nested too), st
   const { x, y } = middle(find('.scrolled'), find('.inner'));
   expect(seen.at(x, y), '.scrolled').toBe('255,255,0');
 });
+
+it("keeps a <body> child's own identity transform on a scrolled page, and its fixed descendants where they are", async () => {
+  document.body.innerHTML = `
+    <div class="layer" style="transform:translateZ(0)">
+      <div class="held" style="position:fixed;top:1100px;left:20px;width:60px;height:60px;background:rgb(255,0,0)"></div>
+    </div>
+    <div style="height:3000px"></div>`;
+  scrollTo(0, 1000);
+  expect(find('.layer').style.transform).toBe('translateZ(0px)');
+  const shot = await captureScreenshot(document.createElement('div')).image;
+  if (!shot) throw new Error('no screenshot');
+  const seen = await pixels(shot.blob);
+  const { x, y } = middle(find('.held'));
+  expect(y).toBeGreaterThan(0);
+  expect(seen.at(x, y)).toBe('255,0,0');
+});
