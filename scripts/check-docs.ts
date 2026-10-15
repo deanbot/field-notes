@@ -1,6 +1,6 @@
 // Fails when the docs describe something that doesn't exist: a CLI command or
-// option, a widget option in an options table, a script tag `data-*`
-// attribute, or a file a relative link points at. Commands and options come
+// option, a widget option in an options table, a script tag `data-*` attribute or a
+// `<field-notes>` attribute, or a file a relative link points at. Commands and options come
 // from the CLI's own OPTIONS table, so the docs and the CLI can't disagree.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -39,7 +39,7 @@ function codeOf(text: string): string[] {
       continue;
     }
     if (fenced) code.push(line);
-    else for (const [, span = ''] of line.matchAll(/(`+)(.+?)\1/g)) code.push(span);
+    else for (const [, , span = ''] of line.matchAll(/(`+)(.+?)\1/g)) code.push(span);
   }
   return code;
 }
@@ -66,13 +66,10 @@ function interfaceKeys(file: string, name: string): string[] {
   return [...body.matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1] ?? '');
 }
 
-/** The `data-*` attributes the script tag reads, from `data.<name>` in its source. */
-function scriptTagAttributes(): string[] {
-  const source = readFileSync(join(root, 'packages/widget/src/script-tag.ts'), 'utf8');
-  const names = [...source.matchAll(/\bdata\.([a-z][a-zA-Z]*)/g)].map((m) => m[1] ?? '');
-  return [...new Set(names)].map(
-    (name) => `data-${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`,
-  );
+/** The attributes a declared `<field-notes>` reads; the script tag reads each as `data-*`. */
+function elementAttributes(): string[] {
+  const source = readFileSync(join(root, 'packages/widget/src/attributes.ts'), 'utf8');
+  return [...new Set([...source.matchAll(/\bread\('([a-z-]+)'\)/g)].map((m) => m[1] ?? ''))];
 }
 
 /** Option names in the first column of tables headed `option`. */
@@ -93,7 +90,8 @@ function tableOptions(text: string): string[] {
 const problems: string[] = [];
 const counts = { files: 0, commands: 0, tableOptions: 0, attributes: 0, links: 0 };
 const widgetOptions = interfaceKeys('packages/widget/src/mount.ts', 'FieldNotesOptions');
-const attributes = scriptTagAttributes();
+const elementNames = elementAttributes();
+const attributes = elementNames.map((name) => `data-${name}`);
 if (widgetOptions.length < 10 || attributes.length < 5) {
   throw new Error('found too few widget options or script tag attributes: the parsing broke');
 }
@@ -123,6 +121,12 @@ for (const file of docFiles()) {
       for (const [attribute = ''] of line.matchAll(/\bdata-[a-z-]+(?==)/g)) {
         counts.attributes++;
         if (!attributes.includes(attribute)) where(`the script tag doesn't read ${attribute}`);
+      }
+    }
+    for (const [, tag = ''] of line.matchAll(/<field-notes\b([^>]*)>/g)) {
+      for (const [, attribute = ''] of tag.matchAll(/\b([a-z-]+)=/g)) {
+        counts.attributes++;
+        if (!elementNames.includes(attribute)) where(`<field-notes> doesn't read ${attribute}`);
       }
     }
   }
