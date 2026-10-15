@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', '.changeset/**'],
+    ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', '**/.next/**', '.changeset/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
@@ -29,7 +29,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['packages/widget/src/**', 'examples/*/src/**'],
+    files: ['packages/widget/src/**', 'examples/*/src/**', 'examples/next/app/**'],
     languageOptions: { globals: globals.browser },
   },
   {
@@ -39,6 +39,7 @@ export default tseslint.config(
       '*.config.{js,ts}',
       'packages/*/*.config.ts',
       'examples/*/*.config.ts',
+      'examples/next/server.ts',
       'tests/**',
     ],
     languageOptions: { globals: globals.node },
