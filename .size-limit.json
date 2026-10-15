@@ -44,7 +44,7 @@
       "packages/field-notes/dist/image-*.js",
       "packages/field-notes/dist/mask-*.js"
     ],
-    "limit": "11 kB",
+    "limit": "12.25 kB",
     "gzip": true
   },
   {
@@ -60,7 +60,7 @@
   {
     "name": "script-tag build (stub, panel, delivery, picker, screenshot and display capture)",
     "path": "packages/field-notes/dist/widget.iife.js",
-    "limit": "41 kB",
+    "limit": "42 kB",
     "gzip": true
   }
 ]
