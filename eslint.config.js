@@ -29,7 +29,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['packages/widget/src/**'],
+    files: ['packages/widget/src/**', 'examples/*/src/**'],
     languageOptions: { globals: globals.browser },
   },
   {
@@ -38,6 +38,8 @@ export default tseslint.config(
       'scripts/**',
       '*.config.{js,ts}',
       'packages/*/*.config.ts',
+      'examples/*/*.config.ts',
+      'tests/**',
     ],
     languageOptions: { globals: globals.node },
   },

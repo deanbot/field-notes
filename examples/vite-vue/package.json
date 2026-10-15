@@ -1,0 +1,22 @@
+{
+  "name": "@field-notes/example-vite-vue",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:export": "vite build --mode export",
+    "preview:export": "vite preview --outDir dist/export",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "field-notes": "workspace:*",
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.9",
+    "typescript": "6.0.3",
+    "vite": "8.3.4",
+    "vue-tsc": "3.3.12"
+  }
+}
