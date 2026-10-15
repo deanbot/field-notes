@@ -360,7 +360,7 @@ docs/
 
 Publish one package, `field-notes`, with subpath exports (`.`, `./sink`, `./vite`, `./middleware`) and a bin. Internal workspace packages are bundled in rather than published separately, so users install one thing and internals can be refactored freely.
 
-**Examples prove integration paths, not frameworks.** Vue covers the Vite plugin plus a custom element used in a template (`isCustomElement`). Next covers middleware, server rendering and React. The widget is framework-independent, so further framework examples would add maintenance without adding coverage.
+**Examples prove integration paths, not frameworks.** Vue covers the Vite plugin, and a framework app next to the widget's custom element: the widget adds `<field-notes>` to `<body>` itself, outside the app, so Vue needs no `isCustomElement`. Next covers middleware, server rendering and React. The widget is framework-independent, so further framework examples would add maintenance without adding coverage.
 
 ---
 
