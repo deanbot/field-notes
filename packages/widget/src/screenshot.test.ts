@@ -768,7 +768,8 @@ describe('the screenshot in the widget', () => {
       15_000,
     );
 
-    it.runIf(plays)(
+    // MediaStreamTrackProcessor, the reader, is Chromium's, like Region Capture.
+    it.runIf(server.browser === 'chromium')(
       'has the tab send its frame again when the video is left waiting for it, and stops reading',
       async () => {
         page(`<p>The page</p>`);
