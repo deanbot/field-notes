@@ -78,6 +78,15 @@ async function sinkHanging(sink: Sink): Promise<string> {
   return `http://127.0.0.1:${String((sink.hanging.address() as AddressInfo).port)}/__field-notes`;
 }
 
+/**
+ * Removes a sink's directory. A request the browser aborted can still be
+ * storing its note when the sink is reset, and a file landing mid-removal
+ * fails it with ENOTEMPTY: retried, it's removed once that write is done.
+ */
+export async function removeSinkDir(dir: string): Promise<void> {
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+}
+
 /** Stops it and forgets its notes and port. */
 async function sinkReset(sink: Sink): Promise<void> {
   await sinkStop(sink);
@@ -86,7 +95,7 @@ async function sinkReset(sink: Sink): Promise<void> {
   sink.dir = undefined;
   sink.port = 0;
   await stop(hanging);
-  if (dir) await rm(dir, { recursive: true, force: true });
+  if (dir) await removeSinkDir(dir);
 }
 
 /** Every stored note, with its attachments as base64. */
