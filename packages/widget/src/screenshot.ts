@@ -81,6 +81,41 @@ function loadSandbox(): Sandbox | undefined {
   return { frame, loaded };
 }
 
+/**
+ * Whether the page lets the copy be drawn: it's drawn from a `data:` SVG
+ * image, which a Content Security Policy's `img-src` can block. The library
+ * would then draw nothing, without an error.
+ */
+function canDrawCopy(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = new Image();
+    probe.onload = () => {
+      resolve(true);
+    };
+    probe.onerror = () => {
+      resolve(false);
+    };
+    probe.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>')}`;
+  });
+}
+
+/**
+ * Takes back the library's move of `<body>`'s children by the page's scroll.
+ * In quirks mode `<body>` is what scrolls, and the page's scroll is already
+ * the offset on `<html>`. The library only translated each child, so adding
+ * the scroll back restores its transform; none stays none, since any other
+ * transform would give fixed descendants a new containing block.
+ */
+function unscrollBody(body: HTMLElement, x: number, y: number): void {
+  for (const child of body.children) {
+    if (!(child instanceof HTMLElement) || !child.style.transform) continue;
+    const matrix = new DOMMatrix(child.style.transform);
+    matrix.e += x;
+    matrix.f += y;
+    child.style.transform = matrix.isIdentity ? '' : matrix.toString();
+  }
+}
+
 const isTransparent = (color: string): boolean =>
   color === 'transparent' || /^rgba\(.*,\s*0\)$/.test(color);
 
@@ -102,7 +137,11 @@ function pageBackground(): string {
  */
 export function captureScreenshot(exclude: Element): Capture {
   const root = document.documentElement;
-  const { clientWidth: width, clientHeight: height } = root;
+  // The viewport, without scrollbars: <html>'s client box, or in quirks mode
+  // <body>'s, which is then the scrolling element.
+  const { clientWidth: width, clientHeight: height } = document.scrollingElement ?? root;
+  const quirks =
+    document.compatMode === 'BackCompat' && document.scrollingElement === document.body;
   const { scrollX: x, scrollY: y } = window;
   const scale = Math.min(devicePixelRatio, 2);
   // Masked areas when the copy starts and when it ends: both are painted.
@@ -148,14 +187,21 @@ export function captureScreenshot(exclude: Element): Capture {
         });
         const body = copy.querySelector('body');
         if (body) body.style.transform = getComputedStyle(document.body).transform;
+        if (body && quirks && (x || y)) unscrollBody(body, x, y);
         rects.push(...maskRects());
         copied();
       },
     });
     // Without the frame in time, the library makes its own, as it would.
-    const [made, frame] = await Promise.all([making, sandbox?.loaded]);
+    const [made, frame, drawable] = await Promise.all([making, sandbox?.loaded, canDrawCopy()]);
     context = made;
     if (stopped()) return undefined;
+    if (!drawable) {
+      console.warn(
+        "[field-notes] this page's Content Security Policy blocks data: images, which the screenshot is drawn from; the note goes without it.",
+      );
+      return undefined;
+    }
     if (frame) made.sandbox = frame;
     Object.assign(made, { node: root, width, height });
     const canvas = await domToCanvas(made);

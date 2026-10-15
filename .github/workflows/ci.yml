@@ -81,7 +81,7 @@ jobs:
           node-version-file: .nvmrc
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
-      - run: pnpm exec vitest run --project browser
+      - run: pnpm exec vitest run --project 'browser*'
         env:
           BROWSERS: ${{ matrix.browser }}
 

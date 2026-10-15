@@ -8,6 +8,7 @@ import { pickElement } from './picker.ts';
 import * as screenshotModule from './screenshot.ts';
 import { MAX_BYTES, WEBP_ABOVE, encode } from './image.ts';
 import { captureScreenshot } from './screenshot.ts';
+import { type Pixels, pixels } from './test-pixels.ts';
 import type { Attachments } from './transport.ts';
 import { consoleSeen, watchConsole } from './test-console.ts';
 
@@ -48,42 +49,6 @@ function find(selector: string): HTMLElement {
   const el = document.querySelector<HTMLElement>(selector);
   if (!el) throw new Error(`no ${selector}`);
   return el;
-}
-
-interface Pixels {
-  /** Device pixels per CSS pixel. */
-  readonly scale: number;
-  readonly width: number;
-  /** `r,g,b` at a point in CSS pixels. */
-  readonly at: (x: number, y: number) => string;
-  /** Whether any pixel passes `test`. */
-  readonly some: (test: (r: number, g: number, b: number) => boolean) => boolean;
-}
-
-async function pixels(blob: Blob): Promise<Pixels> {
-  const bitmap = await createImageBitmap(blob);
-  const canvas = document.createElement('canvas');
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('no 2d context');
-  context.drawImage(bitmap, 0, 0);
-  const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
-  const scale = bitmap.width / document.documentElement.clientWidth;
-  return {
-    scale,
-    width: bitmap.width,
-    at: (x, y) => {
-      const i = (Math.floor(y * scale) * canvas.width + Math.floor(x * scale)) * 4;
-      return `${String(data[i])},${String(data[i + 1])},${String(data[i + 2])}`;
-    },
-    some: (test) => {
-      for (let i = 0; i < data.length; i += 4) {
-        if (test(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0)) return true;
-      }
-      return false;
-    },
-  };
 }
 
 async function shoot(exclude: Element = document.createElement('div')): Promise<Pixels> {
@@ -240,6 +205,33 @@ describe('captureScreenshot', () => {
       '<div style="position:fixed;inset:0;background:rgb(255,0,0)"></div>';
     const shot = await shoot(find('.widget'));
     expect(shot.some(reddish)).toBe(false);
+  });
+
+  it('shows a modal dialog where it is on a scrolled page, but not its backdrop', async () => {
+    page(
+      `<div style="height:3000px;width:3000px;background:rgb(255,255,255)"></div>
+      <dialog class="modal" style="padding:0;border:0;width:120px;height:60px;background:rgb(0,0,255)"></dialog>`,
+      '.modal::backdrop { background: rgb(0, 255, 0); }',
+    );
+    scrollTo(100, 1000);
+    const modal = find('.modal');
+    if (!(modal instanceof HTMLDialogElement)) throw new Error('no dialog');
+    modal.showModal();
+    const { x, y, width, height } = modal.getBoundingClientRect();
+    const shot = await shoot();
+    modal.close();
+    expect(shot.at(x + width / 2, y + height / 2)).toBe('0,0,255');
+    // A limit: the copy has no ::backdrop, so the page shows around the
+    // dialog. PLAN.md says so.
+    expect(shot.at(10, 10)).toBe('255,255,255');
+  });
+
+  it('attaches the shot of a page that really is one colour', async () => {
+    page('', 'html, body { background: rgb(0, 0, 255); }');
+    const shot = await shoot();
+    expect(shot.some((r, g, b) => `${String(r)},${String(g)},${String(b)}` !== '0,0,255')).toBe(
+      false,
+    );
   });
 
   it("copies the page at once, without waiting for images that haven't loaded", async () => {
