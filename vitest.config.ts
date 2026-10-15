@@ -6,7 +6,7 @@ import { sinkCommands } from './scripts/vitest-sink.ts';
 type BrowserName = 'chromium' | 'firefox' | 'webkit';
 
 // Chromium by default (and required for v8 coverage). CI also runs the
-// browser project against every engine via BROWSERS=chromium,firefox,webkit.
+// browser project against each engine, one job per engine, via BROWSERS.
 const browsers = (process.env.BROWSERS ?? 'chromium').split(',') as BrowserName[];
 
 const strict = { lines: 90, branches: 90, functions: 90, statements: 90 };
