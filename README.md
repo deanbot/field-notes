@@ -6,7 +6,7 @@ _Rapid, in-context feedback capture for any web app._
 
 field-notes lets anyone using an app jot down what they want changed, right where they see it, without switching context. A small drop-in widget opens from a hotkey, a floating button or the host app's own UI. Each note carries its own context (URL, the element you picked, a screenshot, who wrote it), so whoever acts on it later doesn't need to be told where you were or what you meant.
 
-Notes are saved as plain files in your project (`.field-notes/items/<id>/note.md` plus a screenshot), ready to be worked through in a batch whenever you choose: by you, a teammate, or a coding agent.
+Notes are saved as plain files in your project (`.field-notes/items/<id>/note.md` plus a screenshot), ready to be worked through in a batch whenever you choose, or as they come in: by you, a teammate, or an agent.
 
 ## Highlights (planned for 1.0)
 
