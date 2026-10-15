@@ -14,19 +14,22 @@ pnpm exec playwright install chromium   # add firefox webkit to run every engine
 
 ## Commands
 
-| command                                                                   | what it does                                                                          |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `pnpm build`                                                              | builds the published `field-notes` package into `packages/field-notes/dist`           |
-| `pnpm typecheck`                                                          | `tsc` across all packages and tooling config                                          |
-| `pnpm lint` / `pnpm format`                                               | ESLint (type-aware) / Prettier                                                        |
-| `pnpm test`                                                               | Vitest: Node project plus a real-browser project (Chromium by default)                |
-| `pnpm test:coverage`                                                      | the same, with coverage thresholds enforced                                           |
-| `BROWSERS=chromium,firefox,webkit pnpm exec vitest run --project browser` | browser tests on every engine                                                         |
-| `pnpm check:package`                                                      | publint + are-the-types-wrong against the packed package                              |
-| `pnpm size`                                                               | bundle-size budgets                                                                   |
-| `pnpm knip`                                                               | unused files, exports and dependencies                                                |
-| `pnpm smoke`                                                              | packs the package, installs it into a temp project, and checks imports, bin and types |
-| `pnpm verify`                                                             | everything above, in CI order. Run it before opening a PR                             |
+| command                                                                   | what it does                                                                                                                          |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm build`                                                              | builds the published `field-notes` package into `packages/field-notes/dist`                                                           |
+| `pnpm typecheck`                                                          | `tsc` across all packages and tooling config                                                                                          |
+| `pnpm lint` / `pnpm format`                                               | ESLint (type-aware) / Prettier                                                                                                        |
+| `pnpm test`                                                               | Vitest: Node project plus a real-browser project (Chromium by default)                                                                |
+| `pnpm test:coverage`                                                      | the same, with coverage thresholds enforced                                                                                           |
+| `BROWSERS=chromium,firefox,webkit pnpm exec vitest run --project browser` | browser tests on every engine                                                                                                         |
+| `pnpm check:package`                                                      | publint + are-the-types-wrong against the packed package                                                                              |
+| `pnpm size`                                                               | bundle-size budgets                                                                                                                   |
+| `pnpm knip`                                                               | unused files, exports and dependencies                                                                                                |
+| `pnpm smoke`                                                              | packs the package, installs it into a temp project, and checks imports, bin and types                                                 |
+| `pnpm check:docs`                                                         | fails if the docs mention a CLI command, CLI option, widget option, script tag attribute or file that doesn't exist                   |
+| `pnpm e2e`                                                                | builds the package and the examples, then runs the Playwright e2e tests in `tests/e2e` (needs Chromium, Firefox and WebKit installed) |
+| `pnpm demo:gif`                                                           | records `docs/demo.gif` from `examples/vite-vue` (run `pnpm build` first; needs ffmpeg)                                               |
+| `pnpm verify`                                                             | everything above, in CI order. Run it before opening a PR                                                                             |
 
 ## Repo layout
 

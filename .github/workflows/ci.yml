@@ -34,6 +34,7 @@ jobs:
       - run: pnpm check:package
       - run: pnpm size
       - run: pnpm check:dist
+      - run: pnpm check:docs
       - run: pnpm knip
       - run: pnpm smoke
 

@@ -166,6 +166,8 @@ header .link { margin-left: auto; }
 .actions .hint { margin-left: auto; }
 .actions > .signed { margin: 0 auto 0 0; min-width: 0; overflow-wrap: anywhere; }
 .picked { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The pick label gives up the room when the row is tight, not the button. */
+.actions > .primary { flex-shrink: 0; white-space: nowrap; }
 .shot { display: flex; align-items: center; }
 .shot img {
   display: block;
