@@ -35,5 +35,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          # pnpm 12 reads provenance from PNPM_CONFIG_PROVENANCE, not NPM_CONFIG_PROVENANCE.
+          # pnpm 12's `config get provenance` sees only the PNPM_ form; both are set to be sure.
+          NPM_CONFIG_PROVENANCE: 'true'
           PNPM_CONFIG_PROVENANCE: 'true'
