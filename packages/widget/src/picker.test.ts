@@ -214,6 +214,7 @@ describe('the element picker', () => {
     );
     await mount({ screenshot: 'dom' }).open();
     await vi.waitFor(() => shadow().querySelector('.shot img'));
+    const oneLine = button('Add note').getBoundingClientRect().height;
     await startPicking();
     tap(find('.order'));
     await back();
@@ -225,6 +226,8 @@ describe('the element picker', () => {
       expect(box.right, el.className).toBeLessThanOrEqual(panel.right);
       expect(box.left, el.className).toBeGreaterThanOrEqual(panel.left);
     }
+    // The label gives up the room, not the button: "Add note" stays on one line.
+    expect(button('Add note').getBoundingClientRect().height).toBe(oneLine);
   });
 
   it("never picks the widget's own UI", async () => {

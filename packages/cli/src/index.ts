@@ -426,7 +426,7 @@ async function runPrune(
 }
 
 /** The options each command takes. */
-const OPTIONS: Readonly<Record<string, readonly string[]>> = {
+export const OPTIONS: Readonly<Record<string, readonly string[]>> = {
   serve: ['port', 'dir', 'origin'],
   import: ['dir'],
   tail: ['json', 'since', 'dir'],
