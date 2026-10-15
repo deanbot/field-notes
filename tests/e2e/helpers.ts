@@ -1,6 +1,6 @@
 // Shared by the e2e specs: finding a note on disk, the built CLI, and
 // collecting what a page complains about.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
@@ -15,6 +15,8 @@ export const PORTS = {
   scriptTagSink: 5793,
   scriptTagPage: 5794,
   next: 5795,
+  /** A sink each browser's test stops and starts itself. */
+  ownSink: { chromium: 5796, firefox: 5797, webkit: 5798 },
 } as const;
 
 /** The built `field-notes` bin, as users get it. */
@@ -25,6 +27,47 @@ export function fieldNotes(...args: string[]): string {
   const result = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
   expect(result.status, result.stderr).toBe(0);
   return result.stdout;
+}
+
+/** A running `field-notes serve`, and how to stop it. */
+export interface Sink {
+  readonly url: string;
+  readonly stop: () => Promise<void>;
+}
+
+/** Whether a sink answers on `url`. */
+async function answers(url: string): Promise<boolean> {
+  try {
+    return (await fetch(`${url}/health`)).ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Starts the built `field-notes serve` on `port`, for notes in `dir`, and
+ * waits until it answers. `stop()` kills it and waits until it doesn't.
+ */
+export async function startSink(port: number, dir: string): Promise<Sink> {
+  const url = `http://127.0.0.1:${String(port)}`;
+  if (await answers(url)) throw new Error(`something already answers on ${url}`);
+  const child = spawn(process.execPath, [CLI, 'serve', '--port', String(port), '--dir', dir], {
+    stdio: 'ignore',
+  });
+  const exited = new Promise<void>((done) =>
+    child.once('exit', () => {
+      done();
+    }),
+  );
+  await expect.poll(() => answers(url), { timeout: 10_000 }).toBe(true);
+  return {
+    url,
+    stop: async () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill();
+      await exited;
+      await expect.poll(() => answers(url)).toBe(false);
+    },
+  };
 }
 
 /** A note as `field-notes list --json` prints it. */
