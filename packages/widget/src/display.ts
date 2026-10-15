@@ -175,10 +175,12 @@ export async function captureDisplay(
     for (const { el } of hidden) el.style.setProperty('display', 'none', 'important');
     const video = await playing(stream);
     if (!video) return 'dom';
-    // The view's size, which the crop is to, scaled as the DOM screenshot is,
-    // so `element.rect` lines up the same way. Not <html>'s: in quirks mode,
-    // it's as tall as the page.
-    const { clientWidth: width, clientHeight: height } = view;
+    // The view's size, scaled as the DOM screenshot is, so `element.rect`
+    // lines up the same way. From what scrolls: in quirks mode <html> is as
+    // tall as the page. Not `view`'s: a transformed ancestor of the widget
+    // is its containing block.
+    const { clientWidth: width, clientHeight: height } =
+      document.scrollingElement ?? document.documentElement;
     const scale = Math.min(devicePixelRatio, 2);
     const canvas = draw(video, width * scale, height * scale);
     if (aborted() || !paintMasks(canvas, maskRects({ frames: true }), scale)) return undefined;
