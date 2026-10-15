@@ -49,6 +49,8 @@ import { mountFieldNotes } from 'field-notes';
 if (import.meta.env.DEV) mountFieldNotes();
 ```
 
+**Or put it in your own markup.** After `defineFieldNotes()`, a `<field-notes>` element in a template carries the widget while it's in the page. It takes the script tag's attributes without `data-`, such as `<field-notes position="bottom-left" surface="side">`, over the options given to `defineFieldNotes()`. In Vue, mark it as a custom element with `isCustomElement`. There's still one widget per page.
+
 **Express, Connect or a custom Node server.** Mount the middleware before any body parser. It stands aside when `NODE_ENV` is `production`:
 
 ```ts
@@ -57,20 +59,20 @@ import { fieldNotesMiddleware } from 'field-notes/middleware';
 app.use(fieldNotesMiddleware());
 ```
 
-**Next.js.** Next has no Connect middleware, so run a small custom server with the middleware in front of Next's handler, and mount the widget from a client component. React runs effects twice in development, so unmount on cleanup:
+**Next.js.** Next has no Connect middleware, so run a small custom server with the middleware in front of Next's handler, and render the widget's element from a client component:
 
 ```tsx
 'use client';
-import { mountFieldNotes } from 'field-notes';
+import { defineFieldNotes } from 'field-notes';
 import { useEffect } from 'react';
+
+const dev = process.env.NODE_ENV === 'development';
 
 export function FieldNotes() {
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'development') return;
-    const handle = mountFieldNotes();
-    return () => handle.unmount();
+    if (dev) defineFieldNotes();
   }, []);
-  return null;
+  return dev ? <field-notes position="bottom-right" /> : null;
 }
 ```
 

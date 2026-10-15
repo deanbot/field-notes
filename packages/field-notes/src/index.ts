@@ -7,6 +7,7 @@ export {
   type Surface,
   type Trigger,
   TAG_NAME,
+  defineFieldNotes,
   isEditableTarget,
   mountFieldNotes,
 } from '@field-notes/widget';

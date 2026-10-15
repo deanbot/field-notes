@@ -75,6 +75,20 @@ if (import.meta.env.DEV) mountFieldNotes({ position: 'bottom-right' });
 <script src="http://localhost:4747/widget.js" data-position="bottom-left"></script>
 ```
 
+### Declared in a template
+
+`mountFieldNotes()` adds its own `<field-notes>` to `<body>`. An app can instead write `<field-notes>` where its framework renders (a Vue template with `isCustomElement`, React JSX or plain HTML), after calling `defineFieldNotes(options)`:
+
+- **Mounting:** a declared element mounts the widget onto itself once it's connected, or once `defineFieldNotes()` runs if it's already in the page. `mountFieldNotes()` doesn't adopt declared elements. While another mount is live, a declared element stays empty without a warning, because one widget per page still holds. When that mount goes, a declared element takes over.
+- **Attributes and options:** the attributes are the script tag's without `data-` (`enabled`, `trigger`, `position`, `offset`, `surface`, `screenshot`, `hotkey`, `endpoint`, `token`). They override `defineFieldNotes()`'s options, which can also hold what attributes can't, such as `context` or `onOpen`.
+  - Attributes are read when the element mounts, including ones a framework sets right after adding it. Changes after that are ignored.
+  - A `token` attribute ends up in server-rendered HTML, so a sink on the page's own origin, which hands the widget its token, is the better fit.
+- **Re-renders:** when the framework removes the element, the widget unmounts with it: listeners, timers and its shadow content go. Another connected declared element, such as the one that replaced it, takes over. A move keeps the widget, open or not.
+  - These are settled once per task, so a swap in either order leaves exactly one widget, on the new element.
+  - Unmounting through the handle empties the element and leaves it in the page, and that element stays empty.
+- **Code:** the declared logic is a lazy chunk. The stub only registers the element, which reports being connected and disconnected, and loads the chunk when `defineFieldNotes()` runs.
+- **The API:** `open()`, `close()` and `toggle()` belong to the handle. A declared widget is opened by its button or hotkey; an app that wants only the API uses `mountFieldNotes()`.
+
 ### Triggers and surfaces (independent of each other)
 
 The floating button is only one way in. **How you open it** and **what opens** are configured separately:
@@ -361,7 +375,7 @@ docs/
 
 Publish one package, `field-notes`, with subpath exports (`.`, `./sink`, `./vite`, `./middleware`) and a bin. Internal workspace packages are bundled in rather than published separately, so users install one thing and internals can be refactored freely.
 
-**Examples prove integration paths, not frameworks.** Vue covers the Vite plugin, and a framework app next to the widget's custom element: the widget adds `<field-notes>` to `<body>` itself, outside the app, so Vue needs no `isCustomElement`. Next covers middleware, server rendering and React. The widget is framework-independent, so further framework examples would add maintenance without adding coverage.
+**Examples prove integration paths, not frameworks.** Vue covers the Vite plugin, and a `<field-notes>` declared in a framework's template (`isCustomElement`). Next covers middleware, server rendering, and the element in React JSX. The widget is framework-independent, so further framework examples would add maintenance without adding coverage.
 
 ---
 

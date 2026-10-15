@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { PORTS, REPO, WIDGET_MARKERS, captureOne, open, problems } from './helpers.ts';
+import { PORTS, REPO, WIDGET_MARKERS, captureOne, open, problems, trigger } from './helpers.ts';
 
 const EXAMPLE = join(REPO, 'examples/next');
 const URL = `http://localhost:${String(PORTS.next)}/`;
@@ -12,7 +12,18 @@ const URL = `http://localhost:${String(PORTS.next)}/`;
 test('the server renders the page, and leaves the widget to the browser', async ({ request }) => {
   const html = await (await request.get(URL)).text();
   expect(html).toContain('<h1>Checkout</h1>');
-  expect(html).not.toContain('<field-notes');
+  // The element from the layout's JSX, empty: the browser mounts the widget.
+  expect(html).toContain('<field-notes position="bottom-right"></field-notes>');
+});
+
+test('the <field-notes> in the JSX carries the widget, and only it', async ({ page }) => {
+  const seen = problems(page);
+  await page.goto(URL);
+  await expect(trigger(page)).toBeVisible();
+  // One element, the layout's: the widget added none of its own.
+  await expect(page.locator('field-notes')).toHaveCount(1);
+  await expect(page.locator('field-notes[position="bottom-right"]')).toHaveCount(1);
+  expect(seen).toEqual([]);
 });
 
 test('a note with a picked element and a screenshot lands on disk', async ({
@@ -23,7 +34,7 @@ test('a note with a picked element and a screenshot lands on disk', async ({
   await page.goto(URL);
   await expect(page.getByRole('heading', { name: 'Checkout' })).toBeVisible();
   await captureOne(page, join(EXAMPLE, '.field-notes'), `${browserName} ${randomUUID()}`);
-  // No hydration errors, and no "already mounted" from React running effects twice.
+  // No hydration errors, and nothing from React running effects twice.
   expect(seen).toEqual([]);
 });
 

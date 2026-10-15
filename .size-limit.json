@@ -60,7 +60,7 @@
   {
     "name": "script-tag build (stub, panel, delivery, picker, screenshot and display capture)",
     "path": "packages/field-notes/dist/widget.iife.js",
-    "limit": "42 kB",
+    "limit": "42.25 kB",
     "gzip": true
   }
 ]

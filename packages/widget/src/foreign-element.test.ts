@@ -1,6 +1,7 @@
 // Its own file: once <field-notes> is defined, the registry can't forget it.
 import { afterEach, expect, it, vi } from 'vitest';
 import { TAG_NAME } from './element.ts';
+import { defineFieldNotes } from './index.ts';
 import { mountFieldNotes } from './mount.ts';
 
 let claimShadow = false;
@@ -47,4 +48,15 @@ it("finds the widget's mount behind a host's own <field-notes>", () => {
   expect(mountFieldNotes({ enabled: true, screenshot: 'off' })).toBe(first);
   expect(document.querySelectorAll(TAG_NAME)).toHaveLength(2);
   first.unmount();
+});
+
+it('leaves declared elements empty, and says why', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  const el = document.createElement(TAG_NAME);
+  document.body.append(el);
+  defineFieldNotes({ screenshot: 'off' });
+  await vi.waitFor(() => {
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("isn't this version's"));
+  });
+  expect(el.shadowRoot).toBeNull();
 });
