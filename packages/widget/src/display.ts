@@ -175,8 +175,10 @@ export async function captureDisplay(
     for (const { el } of hidden) el.style.setProperty('display', 'none', 'important');
     const video = await playing(stream);
     if (!video) return 'dom';
-    // As the DOM screenshot is scaled, so `element.rect` lines up the same way.
-    const { clientWidth: width, clientHeight: height } = document.documentElement;
+    // The view's size, which the crop is to, scaled as the DOM screenshot is,
+    // so `element.rect` lines up the same way. Not <html>'s: in quirks mode,
+    // it's as tall as the page.
+    const { clientWidth: width, clientHeight: height } = view;
     const scale = Math.min(devicePixelRatio, 2);
     const canvas = draw(video, width * scale, height * scale);
     if (aborted() || !paintMasks(canvas, maskRects({ frames: true }), scale)) return undefined;
