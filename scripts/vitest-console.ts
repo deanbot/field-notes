@@ -13,6 +13,8 @@ const seen = new WeakMap<Page, string[]>();
 function consoleWatch({ page }: BrowserCommandContext): void {
   if (!seen.has(page)) {
     page.on('console', (message) => {
+      // Not the page's: Vitest's own files, e.g. a preload WebKit finds unused.
+      if (message.text().includes('/__vitest_browser__/')) return;
       if (message.type() === 'warning' || message.type() === 'error') {
         seen.get(page)?.push(`${message.type()}: ${message.text()}`);
       }
