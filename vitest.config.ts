@@ -1,5 +1,6 @@
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
+import { consoleCommands } from './scripts/vitest-console.ts';
 import { sinkCommands } from './scripts/vitest-sink.ts';
 
 type BrowserName = 'chromium' | 'firefox' | 'webkit';
@@ -34,8 +35,9 @@ export default defineConfig({
             enabled: true,
             headless: true,
             provider: playwright(),
-            // A real sink, run in Node, for the local transport's tests.
-            commands: sinkCommands,
+            // A real sink, run in Node, for the local transport's tests, and the
+            // browser's own console warnings.
+            commands: { ...sinkCommands, ...consoleCommands },
             instances: browsers.map((browser) => ({ browser })),
           },
         },

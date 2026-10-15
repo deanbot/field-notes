@@ -9,6 +9,7 @@ import * as screenshotModule from './screenshot.ts';
 import { MAX_BYTES, WEBP_ABOVE, encode } from './image.ts';
 import { captureScreenshot } from './screenshot.ts';
 import type { Attachments } from './transport.ts';
+import { consoleSeen, watchConsole } from './test-console.ts';
 
 vi.mock('./deliver.ts', () => ({ deliver: vi.fn(() => Promise.resolve()) }));
 vi.mock('./picker.ts', () => ({ pickElement: vi.fn() }));
@@ -89,6 +90,29 @@ async function shoot(exclude: Element = document.createElement('div')): Promise<
   const shot = await captureScreenshot(exclude).image;
   if (!shot) throw new Error('no screenshot');
   return pixels(shot.blob);
+}
+
+/** A tenth of a second of silence as a WAV data URL: a source any engine's <video> loads. */
+function silence(): string {
+  const samples = 800; // 8 kHz, 8-bit, mono
+  const bytes = new Uint8Array(44 + samples).fill(128);
+  const view = new DataView(bytes.buffer);
+  const text = (at: number, value: string): void => {
+    for (let i = 0; i < value.length; i++) bytes[at + i] = value.charCodeAt(i);
+  };
+  text(0, 'RIFF');
+  view.setUint32(4, 36 + samples, true);
+  text(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true); // the format chunk's size
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // channels
+  view.setUint32(24, 8000, true); // sample rate
+  view.setUint32(28, 8000, true); // bytes a second
+  view.setUint16(32, 1, true); // bytes a frame
+  view.setUint16(34, 8, true); // bits a sample
+  text(36, 'data');
+  view.setUint32(40, samples, true);
+  return `data:audio/wav;base64,${btoa(String.fromCharCode(...bytes))}`;
 }
 
 const reddish = (r: number, g: number, b: number): boolean => r > 150 && g < 100 && b < 100;
@@ -237,6 +261,21 @@ describe('captureScreenshot', () => {
     capture.cancel();
     expect(await capture.image).toBeUndefined();
     expect(document.body.innerHTML).toBe(before);
+  });
+
+  it('copies a page with a video in it, logging nothing to the console, even from the browser itself', async () => {
+    // The copy waits for the video to load: tasks run mid-copy, and styles
+    // read after them must come from a frame that has loaded. Firefox warns
+    // "Layout was forced before the page was fully loaded" for one that
+    // hasn't, or the copy fails on its missing <body>.
+    page(
+      `<video src="${silence()}" width="40" height="20"></video><h2>heading</h2><article>text</article><aside>aside</aside><ol><li>item</li></ol><table><tr><td>cell</td></tr></table>`,
+    );
+    await watchConsole();
+    for (let i = 0; i < 3; i++) {
+      expect(await captureScreenshot(document.createElement('div')).image).toBeDefined();
+    }
+    expect(await consoleSeen()).toEqual([]);
   });
 });
 
