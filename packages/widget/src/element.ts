@@ -13,14 +13,19 @@ const SHELL_KEY: unique symbol = Symbol.for('field-notes.shell');
 
 /**
  * Where `defineFieldNotes()` leaves, on the registered class, what an element
- * calls with itself when it's connected or disconnected: `(el) => void`.
- * Shared like `HANDLE_KEY`, so it works whichever copy registered the class.
+ * calls with itself when it's connected or disconnected. Called with nothing,
+ * it returns the live declared mount, which a query of the document can't
+ * find inside a shadow root. Shared like `HANDLE_KEY`, so it works whichever
+ * copy registered the class.
  */
 const DECLARED_KEY: unique symbol = Symbol.for('field-notes.declared');
 
-const changed = (el: HTMLElement): void => {
-  (Reflect.get(el.constructor, DECLARED_KEY) as ((el: HTMLElement) => void) | undefined)?.(el);
-};
+type Declared = Record<typeof DECLARED_KEY, ((el?: HTMLElement) => unknown) | undefined>;
+
+export const callDeclared = (el?: HTMLElement): unknown =>
+  // The hook may be missing; the rule misreads a symbol key's `undefined`.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  (customElements.get(TAG_NAME) as Declared | undefined)?.[DECLARED_KEY]?.(el);
 
 /**
  * Registers `<field-notes>` unless something already has. The element is a
@@ -38,10 +43,10 @@ export function defineShell(): string | undefined {
     class FieldNotesElement extends HTMLElement {
       static readonly [SHELL_KEY] = true;
       connectedCallback(): void {
-        changed(this);
+        callDeclared(this);
       }
       disconnectedCallback(): void {
-        changed(this);
+        callDeclared(this);
       }
     }
     customElements.define(TAG_NAME, FieldNotesElement);

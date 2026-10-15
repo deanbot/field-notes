@@ -1,6 +1,6 @@
 import { type Enabled, isEnabled } from './activation.ts';
 import { BUTTON_CSS, type Corner, type Offset, createButton, setBadge } from './button.ts';
-import { HANDLE_KEY, TAG_NAME, defineShell } from './element.ts';
+import { HANDLE_KEY, TAG_NAME, callDeclared, defineShell } from './element.ts';
 import { matchesHotkey, parseHotkey } from './hotkey.ts';
 import { isEditableTarget } from './keyboard.ts';
 import type * as ConsoleModule from './console-errors.ts';
@@ -141,13 +141,14 @@ const SHELL_CSS = `:host { all: initial !important; }${BUTTON_CSS}`;
 
 /**
  * The live mount on the page, from any copy of the widget. It looks past
- * other `<field-notes>` elements, such as one from a stranger's registration.
+ * other `<field-notes>` elements, such as one from a stranger's registration,
+ * and into shadow roots for a declared one.
  */
 export function findMount(): FieldNotesHandle | undefined {
   for (const el of document.querySelectorAll<Shell>(TAG_NAME)) {
     if (el[HANDLE_KEY]?.active) return el[HANDLE_KEY];
   }
-  return undefined;
+  return callDeclared() as FieldNotesHandle | undefined;
 }
 
 /** How long an open waits for the page to be copied before the surface covers it. */

@@ -23,9 +23,18 @@ const carrying = new Set<Shell>();
 const retired = new WeakSet<Element>();
 /** Elements connected or disconnected since the last reconcile. */
 let moved = new WeakSet<Element>();
+/**
+ * Elements that reported being connected: a query of the document can't
+ * find one inside a shadow root.
+ */
+const reported = new Set<Shell>();
 
 const handleOf = (el: Element): FieldNotesHandle | undefined =>
   Reflect.get(el, HANDLE) as FieldNotesHandle | undefined;
+
+/** The live mount on a `<field-notes>` the page has, wherever it is. */
+const live = (): FieldNotesHandle | undefined =>
+  [...document.querySelectorAll(TAG), ...reported].map(handleOf).find((handle) => handle?.active);
 
 /**
  * Brings the page in line with its declared elements, once per task: a
@@ -49,9 +58,11 @@ function reconcile(): void {
       handle.unmount();
     }
   }
-  const all = [...document.querySelectorAll<Shell>(TAG)];
-  if (all.some((el) => handleOf(el)?.active)) return;
-  const el = all.find((candidate) => !handleOf(candidate) && !retired.has(candidate));
+  for (const el of reported) if (!el.isConnected) reported.delete(el);
+  if (live()) return;
+  const el = [...document.querySelectorAll<Shell>(TAG), ...reported].find(
+    (candidate) => !handleOf(candidate) && !retired.has(candidate),
+  );
   if (!el) return;
   const handle = mountOn(
     readOptions((name) => el.getAttribute(name) ?? undefined),
@@ -60,12 +71,23 @@ function reconcile(): void {
   if (handle.active) carrying.add(el);
 }
 
-/** Reconciles after the current task, once however often it's asked; `el` was connected or disconnected. */
-const schedule = (el?: Element): void => {
-  if (el) moved.add(el);
+/** Reconciles after the current task, once however often it's asked. */
+const schedule = (): void => {
   if (scheduled) return;
   scheduled = true;
   queueMicrotask(reconcile);
+};
+
+/**
+ * What the element calls: with itself when it's connected or disconnected,
+ * or with nothing (`findMount()`) for the live mount.
+ */
+const report = (el?: Shell): FieldNotesHandle | undefined => {
+  if (!el) return live();
+  moved.add(el);
+  if (el.isConnected) reported.add(el);
+  schedule();
+  return undefined;
 };
 
 /**
@@ -83,6 +105,6 @@ export function define(defineShell: () => string | undefined, mount: MountOn): v
     return;
   }
   mountOn = mount;
-  Reflect.set(shell, DECLARED, schedule);
+  Reflect.set(shell, DECLARED, report);
   schedule();
 }

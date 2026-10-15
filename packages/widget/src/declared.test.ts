@@ -225,6 +225,36 @@ describe('defineFieldNotes', () => {
     expect(document.querySelectorAll(TAG_NAME)).toHaveLength(1);
   });
 
+  it("carries the widget inside a component's shadow root, and mountFieldNotes() finds it", async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    defineFieldNotes({ screenshot: 'off' });
+    await settle();
+    const host = document.createElement('div');
+    document.body.append(host);
+    const el = declare({ position: 'top-left' });
+    host.attachShadow({ mode: 'open' }).append(el);
+    const handle = await mounted(el);
+    expect(button(el)?.style.top).toBe('16px');
+    expect(findMount()).toBe(handle);
+    expect(mountFieldNotes({ screenshot: 'off' })).toBe(handle);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('already mounted'));
+    expect(document.querySelectorAll(TAG_NAME)).toHaveLength(0);
+
+    // A light-DOM one waits for it, and takes over when the component goes.
+    const other = declare();
+    document.body.append(other);
+    await settle();
+    expect(carries(other)).toBe(false);
+    host.remove();
+    await mounted(other);
+    expect(handle.active).toBe(false);
+    // Out of the page, it isn't a candidate any more.
+    other.remove();
+    await settle();
+    expect(carries(el)).toBe(false);
+    expect(findMount()).toBeUndefined();
+  });
+
   it('leaves it empty when its enabled attribute says no', async () => {
     defineFieldNotes({ screenshot: 'off' });
     const el = declare({ enabled: 'false' });
