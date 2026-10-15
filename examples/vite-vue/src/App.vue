@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, defineAsyncComponent, ref } from 'vue';
+
+// The widget, in dev and export builds only: production builds drop this
+// import, and with it every trace of the widget.
+const FieldNotes =
+  import.meta.env.DEV || import.meta.env.MODE === 'export'
+    ? defineAsyncComponent(() => import('./FieldNotes.vue'))
+    : undefined;
 
 const quantity = ref(1);
 const price = 24;
@@ -20,6 +27,7 @@ const placed = ref(false);
     </section>
     <button type="button" class="place-order" @click="placed = true">Place order</button>
     <p v-if="placed" role="status">Thanks! Your order is on its way.</p>
+    <component :is="FieldNotes" v-if="FieldNotes" />
   </main>
 </template>
 

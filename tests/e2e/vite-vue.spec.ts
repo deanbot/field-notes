@@ -30,6 +30,8 @@ test('local mode: a note with a picked element and a screenshot lands on disk', 
   const seen = problems(page);
   await page.goto(DEV);
   await expect(page.getByRole('heading', { name: 'Checkout' })).toBeVisible();
+  // The <field-notes> in the app's template carries the widget.
+  await expect(page.locator('main field-notes')).toHaveCount(1);
   await captureOne(page, join(EXAMPLE, '.field-notes'), `${browserName} ${randomUUID()}`);
   // No Vue warnings (such as one for an unknown <field-notes> element), no errors.
   expect(seen).toEqual([]);
@@ -42,7 +44,9 @@ test('export mode: three notes, exported as a zip, imported by the CLI', async (
   const seen = problems(page);
   await page.goto(EXPORT);
   await expect(page.getByRole('heading', { name: 'Checkout' })).toBeVisible();
-  await expect(page.locator('field-notes')).toHaveCount(0); // Off until ?field-notes=1.
+  // The app's <field-notes> is there, but empty until ?field-notes=1.
+  await expect(page.locator('field-notes')).toHaveCount(1);
+  await expect(trigger(page)).toHaveCount(0);
 
   await page.goto(`${EXPORT}?field-notes=1`);
   const marker = `${browserName} ${randomUUID()}`;

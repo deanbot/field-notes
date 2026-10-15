@@ -1,6 +1,6 @@
 import { type Enabled, isEnabled } from './activation.ts';
 import { BUTTON_CSS, type Corner, type Offset, createButton, setBadge } from './button.ts';
-import { HANDLE_KEY, TAG_NAME, defineShell } from './element.ts';
+import { HANDLE_KEY, TAG_NAME, callDeclared, defineShell } from './element.ts';
 import { matchesHotkey, parseHotkey } from './hotkey.ts';
 import { isEditableTarget } from './keyboard.ts';
 import type * as ConsoleModule from './console-errors.ts';
@@ -125,7 +125,7 @@ export interface FieldNotesHandle {
   readonly unmount: () => void;
 }
 
-type Shell = HTMLElement & { [HANDLE_KEY]?: FieldNotesHandle };
+export type Shell = HTMLElement & { [HANDLE_KEY]?: FieldNotesHandle };
 
 const inactive: FieldNotesHandle = Object.freeze({
   active: false,
@@ -141,13 +141,14 @@ const SHELL_CSS = `:host { all: initial !important; }${BUTTON_CSS}`;
 
 /**
  * The live mount on the page, from any copy of the widget. It looks past
- * other `<field-notes>` elements, such as one from a stranger's registration.
+ * other `<field-notes>` elements, such as one from a stranger's registration,
+ * and into shadow roots for a declared one.
  */
 export function findMount(): FieldNotesHandle | undefined {
   for (const el of document.querySelectorAll<Shell>(TAG_NAME)) {
     if (el[HANDLE_KEY]?.active) return el[HANDLE_KEY];
   }
-  return undefined;
+  return callDeclared() as FieldNotesHandle | undefined;
 }
 
 /** How long an open waits for the page to be copied before the surface covers it. */
@@ -163,7 +164,7 @@ const canCaptureTab = (): boolean =>
   'mediaDevices' in navigator &&
   'getDisplayMedia' in navigator.mediaDevices;
 
-const warn = (message: string): void => {
+export const warn = (message: string): void => {
   console.warn(`[field-notes] ${message}`);
 };
 
@@ -183,10 +184,14 @@ const hook = (fn: (() => void) | undefined): void => {
  * Mounting twice, including from two copies of the widget (script tag and
  * npm import), warns and returns the existing mount instead of throwing.
  * Where there's no DOM, or activation says no, it returns an inactive handle.
+ *
+ * With `declared`, a `<field-notes>` the page put there, it mounts onto that
+ * element, and unmounting empties it instead of removing it.
  */
 export function mountFieldNotes(
   options: FieldNotesOptions = {},
   loadExport?: LoadExport,
+  declared?: Shell,
 ): FieldNotesHandle {
   if (typeof document === 'undefined' || typeof customElements === 'undefined') return inactive;
   if (!isEnabled(options.enabled ?? 'auto')) return inactive;
@@ -204,10 +209,11 @@ export function mountFieldNotes(
   const warning = defineShell();
   if (warning) warn(warning);
 
-  const el = document.createElement(TAG_NAME) as Shell;
+  const el: Shell = declared ?? document.createElement(TAG_NAME);
   let root: ShadowRoot;
   try {
-    root = el.attachShadow({ mode: 'open' });
+    // A declared element keeps its root between mounts: it can only have one.
+    root = declared?.shadowRoot ?? el.attachShadow({ mode: 'open' });
   } catch (error) {
     warn(`can't attach to <${TAG_NAME}>, so the widget stays off. ${String(error)}`);
     return inactive;
@@ -397,7 +403,10 @@ export function mountFieldNotes(
       alive = false;
       handle.close();
       teardown.abort();
-      el.remove();
+      // A declared element is the page's: it's emptied, and its styles are
+      // replaced by the next mount's.
+      if (declared) root.replaceChildren();
+      else el.remove();
       Reflect.deleteProperty(el, HANDLE_KEY);
     },
   };
@@ -438,7 +447,7 @@ export function mountFieldNotes(
 
   el[HANDLE_KEY] = handle;
   // A script tag in <head> can mount before <body> exists.
-  ((document.body as HTMLElement | null) ?? document.documentElement).append(el);
+  if (!declared) ((document.body as HTMLElement | null) ?? document.documentElement).append(el);
   // Promoted once connected; older engines without popovers keep it fixed.
   if (button && 'showPopover' in button) button.showPopover();
   return handle;

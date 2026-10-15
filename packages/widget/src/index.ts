@@ -1,7 +1,9 @@
+import { defineShell } from './element.ts';
 import {
   type FieldNotesHandle,
   type FieldNotesOptions,
   mountFieldNotes as mount,
+  warn,
 } from './mount.ts';
 
 export type { Enabled } from './activation.ts';
@@ -22,4 +24,29 @@ export type { FieldNotesHandle, FieldNotesOptions, Trigger } from './mount.ts';
 export function mountFieldNotes(options?: FieldNotesOptions): FieldNotesHandle {
   // Here, not in mount.ts: the script-tag build leaves export mode's chunk out.
   return mount(options, () => import('./export.ts'));
+}
+
+/**
+ * Makes `<field-notes>` elements in the page carry the widget, whenever one
+ * is connected: written into HTML, or rendered by a framework (Vue needs
+ * `isCustomElement` for it). One widget per page still holds: while another
+ * mount is live, a declared element stays empty.
+ *
+ * `options` apply to every declared element; its attributes (`position`,
+ * `surface`, `trigger` and the rest, as the script tag's `data-*`) override
+ * them. Attributes are read when it mounts. Calling it again replaces
+ * `options` for later mounts. Where there's no DOM, it does nothing.
+ */
+export function defineFieldNotes(options?: FieldNotesOptions): void {
+  // A lazy chunk; it finds the elements already connected when it loads.
+  import('./declared.ts').then(
+    (declared) => {
+      declared.define(defineShell, (attributes, el) =>
+        mount({ ...options, ...attributes }, () => import('./export.ts'), el),
+      );
+    },
+    (error: unknown) => {
+      warn(`couldn't load declared elements. ${String(error)}`);
+    },
+  );
 }

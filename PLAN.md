@@ -75,6 +75,22 @@ if (import.meta.env.DEV) mountFieldNotes({ position: 'bottom-right' });
 <script src="http://localhost:4747/widget.js" data-position="bottom-left"></script>
 ```
 
+### Declared in a template
+
+`mountFieldNotes()` adds its own `<field-notes>` to `<body>`. An app can instead write `<field-notes>` where its framework renders (a Vue template with `isCustomElement`, React JSX or plain HTML), after calling `defineFieldNotes(options)`:
+
+- **Mounting:** a declared element mounts the widget onto itself once it's connected, or once `defineFieldNotes()` runs if it's already in the page. `mountFieldNotes()` doesn't adopt declared elements. While another mount is live, a declared element stays empty without a warning, because one widget per page still holds. When that mount goes, a declared element takes over.
+  - **Shadow roots:** a component that renders `<field-notes>` into its shadow root (Lit, Stencil, Vue's `defineCustomElement`) works too, because the element reports itself when it's connected; `mountFieldNotes()` finds that mount through the same hook. An element already inside a shadow root when `defineFieldNotes()` runs isn't found: nothing searches shadow roots, so call `defineFieldNotes()` before such components render.
+- **Attributes and options:** the attributes are the script tag's without `data-` (`enabled`, `trigger`, `position`, `offset`, `surface`, `screenshot`, `hotkey`, `endpoint`, `token`). They override `defineFieldNotes()`'s options, which can also hold what attributes can't, such as `context` or `onOpen`.
+  - Attributes are read when the element mounts, including ones a framework sets right after adding it. Changes after that are ignored.
+  - A `token` attribute ends up in server-rendered HTML, so a sink on the page's own origin, which hands the widget its token, is the better fit.
+- **Re-renders:** when the framework removes the element, the widget unmounts with it: listeners, timers and its shadow content go. Another connected declared element, such as the one that replaced it, takes over. A moved element gets a fresh widget, closed: leaving the page closed its button and surface.
+  - These are settled once per task, so a swap in either order leaves exactly one widget, on the new element.
+  - Unmounting through the handle empties the element and leaves it in the page, and that element stays empty.
+- **Code:** the declared logic is a lazy chunk (under 1.25 KB). The stub only registers the element, which reports being connected and disconnected, and loads the chunk when `defineFieldNotes()` runs.
+- **TypeScript:** JSX needs `<field-notes>` declared in `JSX.IntrinsicElements`; `examples/next/app/custom-elements.d.ts` does that, with the attributes.
+- **The API:** `open()`, `close()` and `toggle()` belong to the handle. A declared widget is opened by its button or hotkey; an app that wants only the API uses `mountFieldNotes()`.
+
 ### Triggers and surfaces (independent of each other)
 
 The floating button is only one way in. **How you open it** and **what opens** are configured separately:
@@ -316,10 +332,11 @@ The widget is a guest in someone else's page. It must not collide with the host'
 | activation stub: trigger listeners, `open()` API, badge count | at mount                    | **< 4 KB**, with no Lit and no Zod |
 | panel: Lit + views + form + `zod/mini`                        | first time the widget opens | < 21 KB                            |
 | element picker (`@medv/finder`)                               | first **Pick element**      | < 4.25 KB                          |
+| declared elements                                             | `defineFieldNotes()`        | < 1.25 KB                          |
 | screenshot (`modern-screenshot`)                              | first open, with the panel  | < 10 KB                            |
 | zip (`fflate`, the note writer)                               | first export                | < 32 KB                            |
 
-Until someone opens it, the host pays about 3.9 KB, a keydown listener and a `storage` listener (for the badge). It does no work at mount beyond one synchronous `localStorage` read of the pending count: no IndexedDB, no DOM observers and no polling. Production builds that don't activate it tree-shake it away entirely.
+Until someone opens it, the host pays about 4 KB, a keydown listener and a `storage` listener (for the badge). With `defineFieldNotes()`, add the declared-elements chunk and one `querySelectorAll` for `<field-notes>`. It does no work at mount beyond one synchronous `localStorage` read of the pending count: no IndexedDB, no DOM observers and no polling. Production builds that don't activate it tree-shake it away entirely.
 
 **No collisions:**
 
@@ -361,7 +378,7 @@ docs/
 
 Publish one package, `field-notes`, with subpath exports (`.`, `./sink`, `./vite`, `./middleware`) and a bin. Internal workspace packages are bundled in rather than published separately, so users install one thing and internals can be refactored freely.
 
-**Examples prove integration paths, not frameworks.** Vue covers the Vite plugin, and a framework app next to the widget's custom element: the widget adds `<field-notes>` to `<body>` itself, outside the app, so Vue needs no `isCustomElement`. Next covers middleware, server rendering and React. The widget is framework-independent, so further framework examples would add maintenance without adding coverage.
+**Examples prove integration paths, not frameworks.** Vue covers the Vite plugin, and a `<field-notes>` declared in a framework's template (`isCustomElement`). Next covers middleware, server rendering, and the element in React JSX. The widget is framework-independent, so further framework examples would add maintenance without adding coverage.
 
 ---
 

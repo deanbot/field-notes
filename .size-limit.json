@@ -38,6 +38,12 @@
     "gzip": true
   },
   {
+    "name": "declared elements (lazy: the declared chunk, loaded by defineFieldNotes())",
+    "path": "packages/field-notes/dist/declared-*.js",
+    "limit": "1.25 kB",
+    "gzip": true
+  },
+  {
     "name": "screenshot (lazy: the screenshot chunk, with modern-screenshot, and the image and mask chunks)",
     "path": [
       "packages/field-notes/dist/screenshot-*.js",
@@ -60,7 +66,7 @@
   {
     "name": "script-tag build (stub, panel, delivery, picker, screenshot and display capture)",
     "path": "packages/field-notes/dist/widget.iife.js",
-    "limit": "42 kB",
+    "limit": "42.25 kB",
     "gzip": true
   }
 ]
