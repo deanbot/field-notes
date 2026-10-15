@@ -261,6 +261,42 @@ describe('captureScreenshot', () => {
     capture.cancel();
     expect(await capture.image).toBeUndefined();
     expect(document.body.innerHTML).toBe(before);
+    // Cancelled at once, before the library has its context.
+    const started = performance.now();
+    const early = captureScreenshot(document.createElement('div'));
+    early.cancel();
+    expect(await early.image).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(document.body.innerHTML).toBe(before);
+  });
+
+  it('reads default styles from one hidden frame, loaded before the copy', async () => {
+    page(`<p>page</p><table><tr><td>cell</td></tr></table>`);
+    const capture = captureScreenshot(document.createElement('div'));
+    await capture.cloned;
+    const frames = [...document.querySelectorAll('iframe')];
+    expect(frames).toHaveLength(1);
+    const [frame] = frames;
+    expect(frame?.id).toMatch(/^__SANDBOX__/);
+    expect(frame?.contentDocument?.URL).toBe('about:srcdoc');
+    expect(frame?.contentDocument?.readyState).toBe('complete');
+    expect(await capture.image).toBeDefined();
+    expect(document.querySelector('iframe')).toBeNull();
+  });
+
+  it("goes on without that frame if it doesn't load in time", async () => {
+    page(`<p style="color:rgb(255,0,0)">page</p>`);
+    // Its load never arrives: stopped on the way down to it.
+    const swallow = (event: Event): void => {
+      if (event.target instanceof HTMLIFrameElement) event.stopPropagation();
+    };
+    document.addEventListener('load', swallow, true);
+    onTestFinished(() => {
+      document.removeEventListener('load', swallow, true);
+    });
+    const shot = await shoot();
+    expect(shot.some(reddish)).toBe(true);
+    expect(document.querySelector('iframe')).toBeNull();
   });
 
   it('copies a page with a video in it, logging nothing to the console, even from the browser itself', async () => {

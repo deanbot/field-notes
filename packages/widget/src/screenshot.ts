@@ -8,6 +8,12 @@ import { MASKED, maskRects, paintMasks } from './mask.ts';
 /** Fonts and images the copy fetches give up after this long. */
 const FETCH_TIMEOUT_MS = 3000;
 
+/** How long the copy waits for its style frame to load. */
+const SANDBOX_TIMEOUT_MS = 1000;
+
+/** The library's own prefix for its frame: the copy leaves such frames out. */
+const SANDBOX_ID = '__SANDBOX__';
+
 const isElement = (node: Node): node is Element => node.nodeType === Node.ELEMENT_NODE;
 
 /**
@@ -31,6 +37,47 @@ function blank(node: Node): void {
   }
   node.style.color = 'transparent';
   node.style.background = 'none';
+}
+
+interface Sandbox {
+  /** The frame once it's loaded, or undefined if it didn't in time or was dropped. */
+  readonly loaded: Promise<HTMLIFrameElement | undefined>;
+  /** Removes it. */
+  readonly drop: () => void;
+}
+
+/**
+ * The hidden frame the library reads each element's default styles from,
+ * made as the library makes it, but loaded before it's read from: Firefox
+ * warns in the page's console when it lays out a frame that's still loading.
+ * None without a <body>, where the library can't make one either.
+ */
+function loadSandbox(): Sandbox | undefined {
+  // The DOM's types promise a <body>; a page can still have none.
+  const body = document.body as HTMLElement | null;
+  if (!body) return undefined;
+  const frame = document.createElement('iframe');
+  frame.id = `${SANDBOX_ID}${Math.random().toString(36).slice(2)}`;
+  frame.width = frame.height = '0';
+  frame.style.cssText = 'visibility:hidden;position:fixed';
+  frame.srcdoc = '<!DOCTYPE html><meta charset="UTF-8"><title></title><body>';
+  let settle: (loaded?: HTMLIFrameElement) => void = () => undefined;
+  const loaded = new Promise<HTMLIFrameElement | undefined>((resolve) => {
+    settle = resolve;
+    setTimeout(resolve, SANDBOX_TIMEOUT_MS);
+    // In case an engine fires load for the empty document a frame starts with.
+    frame.addEventListener('load', () => {
+      if (frame.contentDocument?.URL === 'about:srcdoc') resolve(frame);
+    });
+  });
+  body.append(frame);
+  return {
+    loaded,
+    drop: () => {
+      frame.remove();
+      settle();
+    },
+  };
 }
 
 const isTransparent = (color: string): boolean =>
@@ -67,15 +114,17 @@ export function captureScreenshot(exclude: Element): Capture {
   const cloned = new Promise<void>((resolve) => {
     copied = resolve;
   });
+  const sandbox = loadSandbox();
   const stop = (): void => {
     if (context) destroyContext(context);
+    sandbox?.drop();
     copied();
   };
 
   const take = async (): Promise<Screenshot | undefined> => {
     // A stand-in node: the library would otherwise wait for every image on
     // the page to load (lazy ones never do) before copying anything.
-    const made = await createContext<HTMLElement>(document.createElement('div'), {
+    const making = createContext<HTMLElement>(document.createElement('div'), {
       scale,
       timeout: FETCH_TIMEOUT_MS,
       backgroundColor: pageBackground(),
@@ -83,8 +132,7 @@ export function captureScreenshot(exclude: Element): Capture {
       // page's own scroll too, which onCloneNode undoes.
       features: { restoreScrollPosition: true },
       filter: (node) =>
-        node !== exclude &&
-        !(node instanceof HTMLIFrameElement && node.id.startsWith('__SANDBOX__')),
+        node !== exclude && !(node instanceof HTMLIFrameElement && node.id.startsWith(SANDBOX_ID)),
       onCloneEachNode: blank,
       onCloneNode: (copy) => {
         if (!(copy instanceof HTMLElement)) return;
@@ -103,8 +151,11 @@ export function captureScreenshot(exclude: Element): Capture {
         copied();
       },
     });
+    // Without the frame in time, the library makes its own, as it would.
+    const [made, frame] = await Promise.all([making, sandbox?.loaded]);
     context = made;
     if (stopped()) return undefined;
+    if (frame) made.sandbox = frame;
     Object.assign(made, { node: root, width, height });
     const canvas = await domToCanvas(made);
     if (!paintMasks(canvas, rects, scale)) return undefined;
