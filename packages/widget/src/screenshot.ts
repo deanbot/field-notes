@@ -8,8 +8,11 @@ import { MASKED, maskRects, paintMasks } from './mask.ts';
 /** Fonts and images the copy fetches give up after this long. */
 const FETCH_TIMEOUT_MS = 3000;
 
-/** How long the copy waits for its style frame to load. */
-const SANDBOX_TIMEOUT_MS = 1000;
+/**
+ * How long the copy waits for its style frame to load. Well within the
+ * widget's wait for the copy (CLONE_WAIT_MS in mount.ts).
+ */
+const SANDBOX_TIMEOUT_MS = 400;
 
 /** The library's own prefix for its frame: the copy leaves such frames out. */
 const SANDBOX_ID = '__SANDBOX__';
@@ -40,17 +43,18 @@ function blank(node: Node): void {
 }
 
 interface Sandbox {
-  /** The frame once it's loaded, or undefined if it didn't in time or was dropped. */
+  readonly frame: HTMLIFrameElement;
+  /** The frame once it's loaded, or undefined if it didn't in time. */
   readonly loaded: Promise<HTMLIFrameElement | undefined>;
-  /** Removes it. */
-  readonly drop: () => void;
 }
 
 /**
  * The hidden frame the library reads each element's default styles from,
- * made as the library makes it, but loaded before it's read from: Firefox
- * warns in the page's console when it lays out a frame that's still loading.
- * None without a <body>, where the library can't make one either.
+ * made as the library makes it, but loaded before it's read from. The
+ * library's own is read from at once (an empty quirks-mode document), or,
+ * once the copy has waited on a video, while it loads: Firefox then warns in
+ * the page's console, or the copy fails on its missing <body>. None without
+ * a <body> in the page, where the library can't make one either.
  */
 function loadSandbox(): Sandbox | undefined {
   // The DOM's types promise a <body>; a page can still have none.
@@ -61,9 +65,7 @@ function loadSandbox(): Sandbox | undefined {
   frame.width = frame.height = '0';
   frame.style.cssText = 'visibility:hidden;position:fixed';
   frame.srcdoc = '<!DOCTYPE html><meta charset="UTF-8"><title></title><body>';
-  let settle: (loaded?: HTMLIFrameElement) => void = () => undefined;
   const loaded = new Promise<HTMLIFrameElement | undefined>((resolve) => {
-    settle = resolve;
     setTimeout(resolve, SANDBOX_TIMEOUT_MS);
     // In case an engine fires load for the empty document a frame starts with.
     frame.addEventListener('load', () => {
@@ -71,13 +73,7 @@ function loadSandbox(): Sandbox | undefined {
     });
   });
   body.append(frame);
-  return {
-    loaded,
-    drop: () => {
-      frame.remove();
-      settle();
-    },
-  };
+  return { frame, loaded };
 }
 
 const isTransparent = (color: string): boolean =>
@@ -117,7 +113,7 @@ export function captureScreenshot(exclude: Element): Capture {
   const sandbox = loadSandbox();
   const stop = (): void => {
     if (context) destroyContext(context);
-    sandbox?.drop();
+    sandbox?.frame.remove();
     copied();
   };
 

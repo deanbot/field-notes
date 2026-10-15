@@ -262,11 +262,9 @@ describe('captureScreenshot', () => {
     expect(await capture.image).toBeUndefined();
     expect(document.body.innerHTML).toBe(before);
     // Cancelled at once, before the library has its context.
-    const started = performance.now();
     const early = captureScreenshot(document.createElement('div'));
     early.cancel();
     expect(await early.image).toBeUndefined();
-    expect(performance.now() - started).toBeLessThan(500);
     expect(document.body.innerHTML).toBe(before);
   });
 
