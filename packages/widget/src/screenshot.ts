@@ -2,6 +2,7 @@
 // the viewport as the user sees it, without the widget, with masked content
 // painted over.
 import { type Context, createContext, destroyContext, domToCanvas } from 'modern-screenshot';
+import { styleSource } from './copy-styles.ts';
 import { type Capture, type Screenshot, encode } from './image.ts';
 import { MASKED, maskRects, paintMasks } from './mask.ts';
 
@@ -131,8 +132,13 @@ function pageBackground(): string {
  * mostly within this task; fonts and images are then embedded and the copy
  * drawn, which can take a while. Cross-origin images, iframes, tainted
  * canvases and videos come out blank, and some CSS isn't reproduced.
+ * Elements away from the viewport are copied for their layout alone, unless
+ * `whole` (the reference that copy is tested against).
  */
-export function captureScreenshot(exclude: Element): Capture {
+export function captureScreenshot(
+  exclude: Element,
+  { whole = false }: { readonly whole?: boolean } = {},
+): Capture {
   const root = document.documentElement;
   // The viewport, without scrollbars: <html>'s client box, or in quirks mode
   // <body>'s, which is then the scrolling element.
@@ -197,6 +203,8 @@ export function captureScreenshot(exclude: Element): Capture {
     // Without the frame in time, the library makes its own, as it would.
     const [made, frame, drawable] = await Promise.all([making, sandbox?.loaded, canDrawCopy()]);
     context = made;
+    // The library only asks its window for computed styles.
+    if (!whole) made.ownerWindow = styleSource() as unknown as Window;
     if (stopped()) return undefined;
     if (!drawable) {
       console.warn(
