@@ -3,6 +3,7 @@ import {
   type FieldNotesHandle,
   type FieldNotesOptions,
   mountFieldNotes as mount,
+  warn,
 } from './mount.ts';
 
 export type { Enabled } from './activation.ts';
@@ -38,9 +39,14 @@ export function mountFieldNotes(options?: FieldNotesOptions): FieldNotesHandle {
  */
 export function defineFieldNotes(options?: FieldNotesOptions): void {
   // A lazy chunk; it finds the elements already connected when it loads.
-  void import('./declared.ts').then((declared) => {
-    declared.define(defineShell, (attributes, el) =>
-      mount({ ...options, ...attributes }, () => import('./export.ts'), el),
-    );
-  });
+  import('./declared.ts').then(
+    (declared) => {
+      declared.define(defineShell, (attributes, el) =>
+        mount({ ...options, ...attributes }, () => import('./export.ts'), el),
+      );
+    },
+    (error: unknown) => {
+      warn(`couldn't load declared elements. ${String(error)}`);
+    },
+  );
 }

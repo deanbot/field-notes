@@ -163,7 +163,7 @@ const canCaptureTab = (): boolean =>
   'mediaDevices' in navigator &&
   'getDisplayMedia' in navigator.mediaDevices;
 
-const warn = (message: string): void => {
+export const warn = (message: string): void => {
   console.warn(`[field-notes] ${message}`);
 };
 

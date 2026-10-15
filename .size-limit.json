@@ -38,6 +38,12 @@
     "gzip": true
   },
   {
+    "name": "declared elements (lazy: the declared chunk, loaded by defineFieldNotes())",
+    "path": "packages/field-notes/dist/declared-*.js",
+    "limit": "1.25 kB",
+    "gzip": true
+  },
+  {
     "name": "screenshot (lazy: the screenshot chunk, with modern-screenshot, and the image and mask chunks)",
     "path": [
       "packages/field-notes/dist/screenshot-*.js",

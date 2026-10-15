@@ -21,24 +21,30 @@ let mountOn: MountOn | undefined;
 const carrying = new Set<Shell>();
 /** Declared elements unmounted through their handle: they stay empty. */
 const retired = new WeakSet<Element>();
+/** Elements connected or disconnected since the last reconcile. */
+let moved = new WeakSet<Element>();
 
 const handleOf = (el: Element): FieldNotesHandle | undefined =>
   Reflect.get(el, HANDLE) as FieldNotesHandle | undefined;
 
 /**
  * Brings the page in line with its declared elements, once per task: a
- * framework swapping one for another, in either order, or moving one, is
- * settled in one go. A moved element keeps its widget, open or not.
+ * framework swapping one for another, in either order, is settled in one go.
+ * An element that was removed unmounts its widget, even if it's back: the
+ * browser closed its button and surface as it left. Back in the page, it
+ * carries a fresh one.
  */
 function reconcile(): void {
   scheduled = false;
+  const touched = moved;
+  moved = new WeakSet();
   if (!mountOn) return;
   for (const el of carrying) {
     const handle = handleOf(el);
     if (!handle) {
       carrying.delete(el);
       retired.add(el);
-    } else if (!el.isConnected) {
+    } else if (!el.isConnected || touched.has(el)) {
       carrying.delete(el);
       handle.unmount();
     }
@@ -54,8 +60,9 @@ function reconcile(): void {
   if (handle.active) carrying.add(el);
 }
 
-/** Reconciles after the current task, once however often it's asked. */
-const schedule = (): void => {
+/** Reconciles after the current task, once however often it's asked; `el` was connected or disconnected. */
+const schedule = (el?: Element): void => {
+  if (el) moved.add(el);
   if (scheduled) return;
   scheduled = true;
   queueMicrotask(reconcile);

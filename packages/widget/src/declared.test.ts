@@ -142,19 +142,25 @@ describe('defineFieldNotes', () => {
     },
   );
 
-  it('moved by the framework, it keeps its widget, open', async () => {
+  it('moved by the framework, it carries a fresh widget, closed, as the page shows it', async () => {
     defineFieldNotes({ screenshot: 'off' });
     const el = declare();
     document.body.append(el);
-    const handle = await mounted(el);
-    await handle.open();
+    const first = await mounted(el);
+    await first.open();
     const wrapper = document.createElement('div');
     document.body.append(wrapper);
+    // Leaving the page closed its button's popover and its surface.
     wrapper.append(el);
-    await settle();
-    expect(el[HANDLE_KEY]).toBe(handle);
-    expect(handle.active).toBe(true);
-    expect(button(el)?.getAttribute('aria-expanded')).toBe('true');
+    await vi.waitFor(() => {
+      expect(el[HANDLE_KEY]).not.toBe(first);
+    });
+    const second = await mounted(el);
+    expect([first.active, second.active]).toEqual([false, true]);
+    expect(button(el)?.matches(':popover-open')).toBe(true);
+    expect(button(el)?.getAttribute('aria-expanded')).toBe('false');
+    expect(el.shadowRoot?.querySelector('dialog')).toBeNull();
+    expect(document.querySelectorAll(TAG_NAME)).toHaveLength(1);
     wrapper.remove();
   });
 

@@ -13,13 +13,13 @@ const SHELL_KEY: unique symbol = Symbol.for('field-notes.shell');
 
 /**
  * Where `defineFieldNotes()` leaves, on the registered class, what an element
- * calls when it's connected or disconnected: `() => void`. Shared like
- * `HANDLE_KEY`, so it works whichever copy registered the class.
+ * calls with itself when it's connected or disconnected: `(el) => void`.
+ * Shared like `HANDLE_KEY`, so it works whichever copy registered the class.
  */
 const DECLARED_KEY: unique symbol = Symbol.for('field-notes.declared');
 
 const changed = (el: HTMLElement): void => {
-  (Reflect.get(el.constructor, DECLARED_KEY) as (() => void) | undefined)?.();
+  (Reflect.get(el.constructor, DECLARED_KEY) as ((el: HTMLElement) => void) | undefined)?.(el);
 };
 
 /**

@@ -76,6 +76,8 @@ export function FieldNotes() {
 }
 ```
 
+TypeScript needs `<field-notes>` declared for JSX; [`examples/next/app/custom-elements.d.ts`](https://github.com/deanbot/field-notes/blob/main/examples/next/app/custom-elements.d.ts) does it.
+
 [`examples/next`](https://github.com/deanbot/field-notes/blob/main/examples/next/README.md) has the server and the rest. [`examples/vite-vue`](https://github.com/deanbot/field-notes/blob/main/examples/vite-vue/README.md) does the same with Vite and Vue.
 
 **No build step, or no npm.** `field-notes serve` runs the sink on its own and serves the widget as a script tag:
