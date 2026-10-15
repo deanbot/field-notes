@@ -60,8 +60,17 @@ jobs:
       - run: pnpm smoke
 
   browsers:
-    name: Browsers (Chromium, Firefox, WebKit)
+    # One job per engine: Vitest runs a project's browser instances one file
+    # at a time between them, and the files must not run side by side.
+    name: Browsers (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { browser: chromium, name: Chromium }
+          - { browser: firefox, name: Firefox }
+          - { browser: webkit, name: WebKit }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -71,10 +80,10 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
       - run: pnpm exec vitest run --project browser
         env:
-          BROWSERS: chromium,firefox,webkit
+          BROWSERS: ${{ matrix.browser }}
 
   e2e:
     name: E2E examples (Chromium, Firefox, WebKit)
