@@ -50,11 +50,14 @@ interface Sandbox {
 
 /**
  * The hidden frame the library reads each element's default styles from,
- * made as the library makes it, but loaded before it's read from. The
- * library's own is read from at once (an empty quirks-mode document), or,
- * once the copy has waited on a video, while it loads: Firefox then warns in
- * the page's console, or the copy fails on its missing <body>. None without
- * a <body> in the page, where the library can't make one either.
+ * made in place of the library's own. The library reads from its frame at
+ * once, from the empty quirks-mode document a frame starts with, or, once
+ * the copy has waited on a video, from the one that's loading: the copy then
+ * fails on its missing <body>. This one is read from once it's loaded, and
+ * isn't displayed until then: Firefox lays out a loading frame when the page
+ * does, and warns in the page's console that "Layout was forced before the
+ * page was fully loaded". (Nor does it resolve styles in one not displayed.)
+ * None without a <body> in the page, where the library can't make one either.
  */
 function loadSandbox(): Sandbox | undefined {
   // The DOM's types promise a <body>; a page can still have none.
@@ -63,13 +66,15 @@ function loadSandbox(): Sandbox | undefined {
   const frame = document.createElement('iframe');
   frame.id = `${SANDBOX_ID}${Math.random().toString(36).slice(2)}`;
   frame.width = frame.height = '0';
-  frame.style.cssText = 'visibility:hidden;position:fixed';
+  frame.style.cssText = 'display:none;visibility:hidden;position:fixed';
   frame.srcdoc = '<!DOCTYPE html><meta charset="UTF-8"><title></title><body>';
   const loaded = new Promise<HTMLIFrameElement | undefined>((resolve) => {
     setTimeout(resolve, SANDBOX_TIMEOUT_MS);
     // In case an engine fires load for the empty document a frame starts with.
     frame.addEventListener('load', () => {
-      if (frame.contentDocument?.URL === 'about:srcdoc') resolve(frame);
+      if (frame.contentDocument?.URL !== 'about:srcdoc') return;
+      frame.style.removeProperty('display');
+      resolve(frame);
     });
   });
   body.append(frame);

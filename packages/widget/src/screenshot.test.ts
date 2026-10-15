@@ -271,6 +271,9 @@ describe('captureScreenshot', () => {
   it('reads default styles from one hidden frame, loaded before the copy', async () => {
     page(`<p>page</p><table><tr><td>cell</td></tr></table>`);
     const capture = captureScreenshot(document.createElement('div'));
+    // Not displayed while it loads: Firefox would lay it out with the page.
+    const loading = document.querySelector('iframe');
+    expect(loading && getComputedStyle(loading).display).toBe('none');
     await capture.cloned;
     const frames = [...document.querySelectorAll('iframe')];
     expect(frames).toHaveLength(1);
@@ -278,6 +281,14 @@ describe('captureScreenshot', () => {
     expect(frame?.id).toMatch(/^__SANDBOX__/);
     expect(frame?.contentDocument?.URL).toBe('about:srcdoc');
     expect(frame?.contentDocument?.readyState).toBe('complete');
+    // Displayed once loaded, unseen, and styles resolve in it.
+    const { display, visibility } = getComputedStyle(frame as Element);
+    expect([display, visibility]).toEqual(['block', 'hidden']);
+    const probe = frame?.contentDocument?.createElement('li');
+    if (!probe) throw new Error('no frame document');
+    frame?.contentDocument?.body.append(probe);
+    expect(frame?.contentWindow?.getComputedStyle(probe).display).toBe('list-item');
+    probe.remove();
     expect(await capture.image).toBeDefined();
     expect(document.querySelector('iframe')).toBeNull();
   });
