@@ -105,10 +105,14 @@ function nearView(): WeakSet<Element> {
     if (!seen) {
       // No box (display: none or contents) is at 0,0 but shows nothing.
       const box = el.getBoundingClientRect();
+      // What overflows the box, text and positioned pseudo-elements too,
+      // reaches as far as its scrollable overflow.
+      const right = Math.max(box.right, box.left + el.scrollWidth);
+      const bottom = Math.max(box.bottom, box.top + el.scrollHeight);
       seen =
         (box.width > 0 || box.height > 0) &&
-        box.right > -NEAR &&
-        box.bottom > -NEAR &&
+        right > -NEAR &&
+        bottom > -NEAR &&
         box.left < width + NEAR &&
         box.top < height + NEAR;
     }

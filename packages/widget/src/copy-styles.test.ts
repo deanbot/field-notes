@@ -160,6 +160,42 @@ it('leaves out what is scaled to nothing in view, as the page does', async () =>
   expect(fast.some((r, g, b) => r + g + b < 600)).toBe(false);
 });
 
+async function sameAsWhole(): Promise<void> {
+  const whole = await shoot(true);
+  const fast = await shoot(false);
+  const differences = fast.differences(whole, 48);
+  expect(differences.slice(0, 5), `${String(differences.length)} pixels differ`).toEqual([]);
+}
+
+it('copies text that overflows a box out of view into view', async () => {
+  page(
+    `<div class="spill">${repeat(400, () => 'overflowing ')}</div><div style="height:4000px"></div>`,
+    '.spill { margin-top: 1200px; height: 20px; width: 300px; font-size: 20px; }',
+  );
+  scrollTo(0, 1500);
+  await sameAsWhole();
+});
+
+it('copies text that overflows a box left of the view into view', async () => {
+  page(
+    `<div class="spill">${repeat(200, () => 'sideways ')}</div><div style="width:6000px;height:10px"></div>`,
+    '.spill { width: 300px; height: 40px; font-size: 20px; white-space: nowrap; }',
+  );
+  scrollTo(1500, 0);
+  await sameAsWhole();
+});
+
+it('copies a pseudo-element positioned from a box out of view into view', async () => {
+  page(
+    `<div class="anchor"></div><div style="height:4000px"></div>`,
+    `.anchor { position: relative; margin-top: 1200px; height: 20px; }
+    .anchor::before { content: ''; position: absolute; top: 400px; width: 80px; height: 80px;
+      background: rgb(0, 160, 0); }`,
+  );
+  scrollTo(0, 1500);
+  await sameAsWhole();
+});
+
 /** The issue's page: a table of some 4,000 elements, scrolled to its middle. */
 const TABLE = `<table>${repeat(800, (i) => `<tr><td>row ${String(i)}</td><td><b>x</b></td><td>y</td></tr>`)}</table>`;
 
