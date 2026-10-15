@@ -60,5 +60,5 @@ Once enabled, merging to `main` runs the Release workflow. If there are pending 
 
 One-time setup:
 
-- add an `NPM_TOKEN` repository secret (an npm automation token)
+- add an `NPM_TOKEN` repository secret: an npm granular access token with read and write access to packages and 2FA bypass. Classic automation tokens no longer exist, and npm caps write tokens at 90 days, so this one needs replacing before it expires. npm plans to stop direct publishes with these tokens in January 2027, so move to trusted publishing (OIDC) before then
 - set the `RELEASE_ENABLED` repository variable to `true` when ready to publish

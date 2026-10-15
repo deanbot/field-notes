@@ -2,8 +2,6 @@
 
 _Rapid, in-context feedback capture for any web app._
 
-> **Status: in development, not yet published.** The design lives in [PLAN.md](https://github.com/deanbot/field-notes/blob/main/PLAN.md).
-
 ![Opening field-notes on a checkout page, picking the order button, writing a note, and the note.md it becomes](https://raw.githubusercontent.com/deanbot/field-notes/main/docs/demo.gif)
 
 field-notes lets anyone using an app jot down what they want changed, right where they see it, without switching context. A small drop-in widget opens from a hotkey, a floating button or the host app's own UI. Each note carries its own context (URL, the element you picked, a screenshot, who wrote it), so whoever acts on it later doesn't need to be told where you were or what you meant.
@@ -205,7 +203,7 @@ For live work, start the agent's session with `field-notes tail --json` running,
 
 ## Development
 
-See [CONTRIBUTING.md](https://github.com/deanbot/field-notes/blob/main/CONTRIBUTING.md).
+See [CONTRIBUTING.md](https://github.com/deanbot/field-notes/blob/main/CONTRIBUTING.md). The design lives in [PLAN.md](https://github.com/deanbot/field-notes/blob/main/PLAN.md).
 
 ## License
 

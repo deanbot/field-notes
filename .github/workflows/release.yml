@@ -17,6 +17,10 @@ jobs:
     # "true", so early pushes to main can't publish a placeholder to npm.
     if: github.repository == 'deanbot/field-notes' && vars.RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
+    env:
+      # Publish with provenance. pnpm 12 reads this from PNPM_CONFIG_PROVENANCE
+      # only, and an NPM_CONFIG_PROVENANCE beside it turns it off again.
+      PNPM_CONFIG_PROVENANCE: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -27,6 +31,9 @@ jobs:
           node-version-file: .nvmrc
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      # A release without provenance can't get it back: stop instead.
+      - name: Check provenance is on
+        run: test "$(pnpm config get provenance)" = true
       - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
           publish: pnpm release
@@ -35,4 +42,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: 'true'
