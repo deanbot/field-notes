@@ -5,11 +5,28 @@ import type { Pixels } from './test-pixels.ts';
 /**
  * Has `getDisplayMedia` share a canvas the size of the view, as this tab
  * would: blue, a red square at (40, 30) and a green strip along the bottom
- * 20px. Region Capture is faked too. Undo with `vi.restoreAllMocks()` and
+ * 20px. Region Capture is faked too, keeping each element the share is
+ * cropped to. Undo with `vi.restoreAllMocks()` and
  * `vi.unstubAllGlobals()`.
  */
-export function shareTab(): void {
-  vi.stubGlobal('CropTarget', { fromElement: () => Promise.resolve({}) });
+export interface Cropped {
+  readonly box: DOMRect;
+  /** What the element paints over the page: its background and border. */
+  readonly paints: string;
+}
+
+export function shareTab(): { readonly cropped: Cropped[] } {
+  const cropped: Cropped[] = [];
+  vi.stubGlobal('CropTarget', {
+    fromElement: (el: Element) => {
+      const { backgroundColor, borderTopWidth, borderLeftWidth } = getComputedStyle(el);
+      cropped.push({
+        box: el.getBoundingClientRect(),
+        paints: `${backgroundColor} ${borderTopWidth} ${borderLeftWidth}`,
+      });
+      return Promise.resolve({});
+    },
+  });
   const scale = Math.min(devicePixelRatio, 2);
   const { clientWidth, clientHeight } = document.scrollingElement ?? document.documentElement;
   const tab = document.createElement('canvas');
@@ -42,12 +59,16 @@ export function shareTab(): void {
     });
     return Promise.resolve(stream);
   });
+  return { cropped };
 }
 
-/** Checks a capture of `shareTab()`'s tab is the view's size, each point where it is on screen. */
-export function expectView(seen: Pixels): void {
+/** Checks a capture of `shareTab()`'s tab was cropped to the view, and is its size, each point where it is on screen. */
+export function expectView(seen: Pixels, cropped: Cropped[]): void {
   const { clientWidth, clientHeight } = document.scrollingElement ?? document.documentElement;
   const blue = '0,0,255';
+  expect(
+    cropped.map(({ box: { x, y, width, height }, paints }) => [x, y, width, height, paints]),
+  ).toEqual([[0, 0, clientWidth, clientHeight, 'rgba(0, 0, 0, 0) 0px 0px']]);
   expect({
     size: [seen.width, seen.height],
     square: seen.at(50, 40),

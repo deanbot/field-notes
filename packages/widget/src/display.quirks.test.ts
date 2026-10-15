@@ -29,7 +29,7 @@ it.runIf(plays)(
     document.body.innerHTML = '<div style="height:3000px;width:3000px"></div>';
     scrollTo(100, 1000);
     expect([document.body.scrollLeft, document.body.scrollTop]).toEqual([100, 1000]);
-    shareTab();
+    const { cropped } = shareTab();
     const host = document.createElement('div');
     document.body.append(host);
     const shot = await captureDisplay(
@@ -37,6 +37,6 @@ it.runIf(plays)(
       new AbortController().signal,
     );
     if (!shot || shot === 'dom') throw new Error(`no display capture: ${String(shot)}`);
-    expectView(await pixels(shot.blob));
+    expectView(await pixels(shot.blob), cropped);
   },
 );

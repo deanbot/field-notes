@@ -150,9 +150,14 @@ export async function captureDisplay(
   }
   // The page's view, without scrollbars, whichever side they're on: what a
   // fixed element at inset 0 covers. The crop is to it, not to <html>, which
-  // is shorter than the view on a short page.
+  // is shorter than the view on a short page. In the top layer, as a
+  // popover: otherwise a transformed or filtered ancestor of the widget
+  // would be what it covers. Undoing the user agent's popover styles keeps
+  // it the view's size, and paints nothing over the page.
   const view = document.createElement('div');
-  view.style.cssText = 'position:fixed;inset:0;pointer-events:none';
+  view.popover = 'manual';
+  view.style.cssText =
+    'position:fixed;inset:0;width:auto;height:auto;border:0;background:transparent;pointer-events:none';
   const hidden = [...exclude.children]
     .filter((el) => el instanceof HTMLElement)
     .map((el) => ({
@@ -166,6 +171,7 @@ export async function captureDisplay(
     if (aborted()) return undefined;
     if (!track || !croppable(track)) return 'dom';
     exclude.append(view);
+    view.showPopover();
     painting = keepPainting(exclude);
     // Rejects unless the track is this tab.
     const cropped = window.CropTarget.fromElement(view).then((target) => track.cropTo(target));
@@ -177,8 +183,7 @@ export async function captureDisplay(
     if (!video) return 'dom';
     // The view's size, scaled as the DOM screenshot is, so `element.rect`
     // lines up the same way. From what scrolls: in quirks mode <html> is as
-    // tall as the page. Not `view`'s: a transformed ancestor of the widget
-    // is its containing block.
+    // tall as the page.
     const { clientWidth: width, clientHeight: height } =
       document.scrollingElement ?? document.documentElement;
     const scale = Math.min(devicePixelRatio, 2);
