@@ -21,7 +21,6 @@
     "smoke": "node scripts/smoke-pack.ts",
     "verify": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:coverage && pnpm check:package && pnpm size && pnpm check:dist && pnpm check:docs && pnpm knip && pnpm smoke",
     "changeset": "changeset",
-    "release": "pnpm build && changeset publish",
     "e2e": "pnpm build && pnpm --filter @field-notes/example-vite-vue build && pnpm --filter @field-notes/example-vite-vue build:export && pnpm --filter @field-notes/example-next build && playwright test",
     "check:docs": "node scripts/check-docs.ts",
     "demo:gif": "node scripts/demo-gif.ts"
