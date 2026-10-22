@@ -10,6 +10,10 @@ import { type CliIo, run } from './index.ts';
 const NOW = Date.parse('2026-10-14T12:00:00.000Z');
 // Watch events can lag on CI runners, macOS's most.
 const WAIT = { timeout: 15_000, interval: 20 };
+// A test here waits up to WAIT at most four times (startTail's included), so
+// Vitest's 5 s default would cut it off before its own waits ran out. A hung
+// test still fails, at this.
+const TEST_TIMEOUT = 4 * WAIT.timeout + 5_000;
 // Long enough for a stray duplicate to show up.
 const SETTLE_MS = 500;
 
@@ -115,7 +119,7 @@ async function startTail(...argv: string[]): Promise<Tailing> {
 
 const ids = (lines: readonly string[]): string[] => lines.map((l) => l.split('  ')[0] ?? '');
 
-describe('tail', () => {
+describe('tail', { timeout: TEST_TIMEOUT }, () => {
   it('prints each note that lands after it starts, and none from before', async () => {
     await add(note('OLD'));
     const t = await startTail();
