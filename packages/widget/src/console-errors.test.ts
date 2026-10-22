@@ -93,6 +93,13 @@ describe('captureConsoleErrors', () => {
     expect(entryFor(custom, stack)).toBe(stack);
   });
 
+  it('heads an error with an empty name by its message alone', () => {
+    const error = (): Error => Object.assign(new Error('zed'), { name: '' });
+    const chromium = 'zed\n    at run (http://localhost:5173/app.js:4:7)';
+    expect(entryFor(error(), chromium)).toBe(chromium);
+    expect(entryFor(error(), FRAMES)).toBe(`zed\n${FRAMES.trim()}`);
+  });
+
   it('records uncaught errors and unhandled rejections without replacing onerror', () => {
     hostLogger(); // the test runner logs these events through console.error too
     const capture = start();

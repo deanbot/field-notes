@@ -15,9 +15,10 @@ function describe(value: unknown): string {
   try {
     if (typeof value === 'string') return value;
     if (value instanceof Error) {
-      // Chromium's stack starts with this header; WebKit's and Firefox's are
-      // frames only, whose URLs may happen to contain a short message.
-      const head = value.message ? `${value.name}: ${value.message}` : value.name;
+      // Chromium's stack starts with this header, built as Error's toString
+      // builds it; WebKit's and Firefox's are frames only, whose URLs may
+      // happen to contain a short message.
+      const head = [value.name, value.message].filter(Boolean).join(': ');
       const stack = value.stack ?? '';
       return stack === head || stack.startsWith(`${head}\n`) ? stack : `${head}\n${stack}`.trim();
     }
