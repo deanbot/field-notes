@@ -7,6 +7,11 @@
 // changesets does (`<name>@<version>`, notes from CHANGELOG.md). Each step is
 // skipped when done, so a rerun picks up where a failed run stopped.
 //
+// The pack artifact is checked against this job's checkout, not trusted: the
+// name and version must be the checked-out package's, the package can't be
+// private, and the dist-tag must be one changesets would pick from the
+// checkout. pnpm runs without GITHUB_TOKEN.
+//
 //   node scripts/publish-packed.ts <pack-dir> [--dry-run]
 //
 // --dry-run checks everything, runs `pnpm publish --dry-run`, and only says
@@ -35,11 +40,15 @@ export interface PublishOptions {
   readonly sha: string;
   readonly token: string;
   readonly dryRun: boolean;
-  /** Runs a command, resolving to its stdout; rejects if it fails. */
-  readonly exec: (command: string, args: readonly string[]) => Promise<string>;
+  /** The environment to run commands in, before GITHUB_TOKEN is taken out. */
+  readonly env: Env;
+  /** Runs a command in exactly `env`, resolving to its stdout; rejects if it fails. */
+  readonly exec: (command: string, args: readonly string[], env: Env) => Promise<string>;
   readonly fetch: typeof fetch;
   readonly log: (line: string) => void;
 }
+
+export type Env = Readonly<Record<string, string | undefined>>;
 
 const NAME = /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/;
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
@@ -90,20 +99,61 @@ export function changelogSection(changelog: string, version: string): string | u
   return section || undefined;
 }
 
-/** The directory of the workspace package called `name`, under `<root>/packages`. */
-async function packageDir(root: string, name: string): Promise<string> {
+interface Manifest {
+  readonly name?: unknown;
+  readonly version?: unknown;
+  readonly private?: unknown;
+}
+
+/** The workspace package called `name`, under `<root>/packages`. */
+async function checkedOut(
+  root: string,
+  name: string,
+): Promise<{ dir: string; manifest: Manifest }> {
   for (const entry of await readdir(join(root, 'packages'))) {
     const dir = join(root, 'packages', entry);
+    let manifest: Manifest;
     try {
-      const manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as {
-        name?: unknown;
-      };
-      if (manifest.name === name) return dir;
+      manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as Manifest;
     } catch {
-      // not a package
+      continue; // not a package
     }
+    if (manifest.name === name) return { dir, manifest };
   }
   return fail(`${name}: no package with that name under packages/`);
+}
+
+/**
+ * The dist-tags changesets could give a release in this checkout: `latest`,
+ * and while `.changeset/pre.json` exists its tag too (changesets still uses
+ * `latest` for a package with only prereleases on npm).
+ */
+export async function allowedTags(root: string): Promise<string[]> {
+  let json: string;
+  try {
+    json = await readFile(join(root, '.changeset', 'pre.json'), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ['latest'];
+    throw error;
+  }
+  const { tag } = JSON.parse(json) as { tag?: unknown };
+  if (typeof tag !== 'string' || !DIST_TAG.test(tag)) fail('.changeset/pre.json: bad tag');
+  return ['latest', tag];
+}
+
+/** `env` without GITHUB_TOKEN: the commands run here need none of it. */
+export function withoutGitHubToken(env: Env): Env {
+  const { GITHUB_TOKEN: _, ...rest } = env;
+  return rest;
+}
+
+/** Runs `command` in exactly `env`, resolving to its stdout. */
+export async function execIn(command: string, args: readonly string[], env: Env): Promise<string> {
+  const { stdout } = await promisify(execFile)(command, args, {
+    env,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return stdout;
 }
 
 export async function publishPacked(options: PublishOptions): Promise<void> {
@@ -130,29 +180,38 @@ export async function publishPacked(options: PublishOptions): Promise<void> {
     }
   };
 
+  const childEnv = withoutGitHubToken(options.env);
+  const run = (command: string, args: readonly string[]) => exec(command, args, childEnv);
   const releases = readPlan(await readFile(join(options.packDir, 'publish-plan.json'), 'utf8'));
   if (releases.length === 0) log('Nothing to publish.');
+  const tags = await allowedTags(options.root);
   for (const release of releases) {
     const label = `${release.name}@${release.version}`;
     const file = join(options.packDir, release.tarball.path);
+
+    // The plan comes from the pack job, so it's checked against this checkout.
+    const { dir, manifest: local } = await checkedOut(options.root, release.name);
+    if (local.private === true) fail(`${label}: the checked-out package is private`);
+    if (local.version !== release.version) {
+      fail(`${label}: the checked-out package is at ${String(local.version)}`);
+    }
+    if (!tags.includes(release.tag)) {
+      fail(`${label}: dist-tag ${release.tag} isn't one of ${tags.join(', ')}`);
+    }
 
     // The tarball is the one planned: its bytes, then the manifest inside.
     const digest = `sha256-${createHash('sha256')
       .update(await readFile(file))
       .digest('base64')}`;
     if (digest !== release.tarball.integrity) fail(`${label}: tarball integrity doesn't match`);
-    const manifest = JSON.parse(await exec('tar', ['-xzOf', file, 'package/package.json'])) as {
-      name?: unknown;
-      version?: unknown;
-    };
+    const manifest = JSON.parse(
+      await run('tar', ['-xzOf', file, 'package/package.json']),
+    ) as Manifest;
     if (manifest.name !== release.name || manifest.version !== release.version) {
       fail(`${label}: the tarball holds ${String(manifest.name)}@${String(manifest.version)}`);
     }
     // Before publishing, so a missing entry stops the release, not just its notes.
-    const changelog = await readFile(
-      join(await packageDir(options.root, release.name), 'CHANGELOG.md'),
-      'utf8',
-    ).catch(() => '');
+    const changelog = await readFile(join(dir, 'CHANGELOG.md'), 'utf8').catch(() => '');
     const notes = changelogSection(changelog, release.version);
     if (notes === undefined) fail(`${label}: no CHANGELOG.md entry for ${release.version}`);
 
@@ -165,7 +224,7 @@ export async function publishPacked(options: PublishOptions): Promise<void> {
     if (onNpm) log(`${label} is on npm already; not publishing it again.`);
     else {
       log(
-        await exec('pnpm', [
+        await run('pnpm', [
           'publish',
           file,
           '--access',
@@ -232,8 +291,8 @@ if (process.argv[1] === import.meta.filename) {
       sha: env('GITHUB_SHA'),
       token: env('GITHUB_TOKEN'),
       dryRun,
-      exec: async (command, argv) =>
-        (await promisify(execFile)(command, argv, { maxBuffer: 64 * 1024 * 1024 })).stdout,
+      env: process.env,
+      exec: execIn,
       fetch,
       log: (line) => {
         console.log(line);

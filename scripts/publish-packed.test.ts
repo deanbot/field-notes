@@ -6,15 +6,27 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  allowedTags,
   changelogSection,
+  type Env,
+  execIn,
   type PublishOptions,
   publishPacked,
   readPlan,
+  withoutGitHubToken,
 } from './publish-packed.ts';
 
 const run = promisify(execFile);
 const NAME = '@scope/pkg';
 const SHA = 'a'.repeat(40);
+/** What the publish job's script step runs in, as far as these tests care. */
+const ENV: Env = {
+  PATH: '/usr/bin:/bin',
+  ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example/token',
+  ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'oidc-request',
+  PNPM_CONFIG_PROVENANCE: 'true',
+  GITHUB_TOKEN: 'contents-write',
+};
 const CHANGELOG = `# ${NAME}
 
 ## 1.0.1
@@ -43,7 +55,7 @@ beforeEach(async () => {
   await mkdir(join(root, 'packages', 'pkg'), { recursive: true });
   await mkdir(join(root, 'packages', 'other'), { recursive: true });
   await writeFile(join(root, 'packages', 'other', 'package.json'), '{"name":"other"}');
-  await writeFile(join(root, 'packages', 'pkg', 'package.json'), JSON.stringify({ name: NAME }));
+  await checkOut({ name: NAME, version: '1.0.1' });
   await writeFile(join(root, 'packages', 'pkg', 'CHANGELOG.md'), CHANGELOG);
   await mkdir(join(packDir, 'packages'), { recursive: true });
 });
@@ -51,6 +63,11 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(work, { recursive: true, force: true });
 });
+
+/** Writes the checked-out package.json of the package under test. */
+async function checkOut(manifest: Record<string, unknown>): Promise<void> {
+  await writeFile(join(root, 'packages', 'pkg', 'package.json'), JSON.stringify(manifest));
+}
 
 /** Packs a tarball holding `manifest`, and writes a plan for `planned`. */
 async function pack(
@@ -81,6 +98,15 @@ async function pack(
   return join(packDir, path);
 }
 
+/** Puts the checkout in changesets' pre mode, with dist-tag `tag`. */
+async function preMode(tag: string): Promise<void> {
+  await mkdir(join(root, '.changeset'), { recursive: true });
+  await writeFile(
+    join(root, '.changeset', 'pre.json'),
+    JSON.stringify({ mode: 'pre', tag, initialVersions: {}, changesets: [] }),
+  );
+}
+
 /** A fetch that answers every request with `answer`. */
 function fakeFetch(answer: (url: string, init?: RequestInit) => Response): typeof fetch {
   return (input, init) => {
@@ -98,11 +124,12 @@ interface World {
 
 /** Options with a fake npm and GitHub, and every call they get. */
 function setUp(world: World = {}, dryRun = false) {
-  const calls: { pnpm: string[][]; posts: { path: string; body: unknown }[]; log: string[] } = {
-    pnpm: [],
-    posts: [],
-    log: [],
-  };
+  const calls: {
+    pnpm: string[][];
+    envs: Env[];
+    posts: { path: string; body: unknown }[];
+    log: string[];
+  } = { pnpm: [], envs: [], posts: [], log: [] };
   const options: PublishOptions = {
     packDir,
     root,
@@ -110,9 +137,11 @@ function setUp(world: World = {}, dryRun = false) {
     sha: SHA,
     token: 't0ken',
     dryRun,
-    exec: async (command, args) => {
+    env: ENV,
+    exec: async (command, args, env) => {
       if (command === 'pnpm') {
         calls.pnpm.push([...args]);
+        calls.envs.push(env);
         return 'published';
       }
       return (await run(command, [...args])).stdout;
@@ -173,6 +202,14 @@ describe('publishPacked', () => {
     ]);
   });
 
+  it('runs pnpm without GITHUB_TOKEN, keeping what the OIDC exchange and provenance need', async () => {
+    await pack();
+    const { options, calls } = setUp();
+    await publishPacked(options);
+    const { GITHUB_TOKEN: _, ...rest } = ENV;
+    expect(calls.envs).toEqual([rest]);
+  });
+
   it('on a rerun, skips what is done: the publish, the tag and the release', async () => {
     await pack();
     const { options, calls } = setUp({ onNpm: 200, tag: 200, release: 200 });
@@ -191,6 +228,8 @@ describe('publishPacked', () => {
   });
 
   it('marks a prerelease as one', async () => {
+    await preMode('beta');
+    await checkOut({ name: NAME, version: '1.1.0-beta.1' });
     await pack({ version: '1.1.0-beta.1', tag: 'beta' }, { name: NAME, version: '1.1.0-beta.1' });
     await writeFile(
       join(root, 'packages', 'pkg', 'CHANGELOG.md'),
@@ -260,6 +299,56 @@ describe('publishPacked', () => {
       expect(calls.pnpm).toEqual([]);
     });
 
+    it('a planned version the checkout is not at, even with a CHANGELOG.md entry for it', async () => {
+      await checkOut({ name: NAME, version: '1.0.0' });
+      await pack();
+      const { options, calls } = setUp();
+      await expect(publishPacked(options)).rejects.toThrow(
+        '@scope/pkg@1.0.1: the checked-out package is at 1.0.0',
+      );
+      expect(calls.pnpm).toEqual([]);
+    });
+
+    it('a checked-out package with no version', async () => {
+      await checkOut({ name: NAME });
+      await pack();
+      const { options, calls } = setUp();
+      await expect(publishPacked(options)).rejects.toThrow('checked-out package is at undefined');
+      expect(calls.pnpm).toEqual([]);
+    });
+
+    it('a checked-out package that is private', async () => {
+      await checkOut({ name: NAME, version: '1.0.1', private: true });
+      await pack();
+      const { options, calls } = setUp();
+      await expect(publishPacked(options)).rejects.toThrow(
+        '@scope/pkg@1.0.1: the checked-out package is private',
+      );
+      expect(calls.pnpm).toEqual([]);
+    });
+
+    it.each([
+      ['a dist-tag other than latest', undefined, 'next', "dist-tag next isn't one of latest"],
+      [
+        "a dist-tag other than latest or pre mode's",
+        'beta',
+        'next',
+        "dist-tag next isn't one of latest, beta",
+      ],
+      [
+        "pre mode's dist-tag once pre mode is over",
+        undefined,
+        'beta',
+        "dist-tag beta isn't one of latest",
+      ],
+    ])('%s', async (_, pre, tag, error) => {
+      if (pre !== undefined) await preMode(pre);
+      await pack({ tag });
+      const { options, calls } = setUp();
+      await expect(publishPacked(options)).rejects.toThrow(error);
+      expect(calls.pnpm).toEqual([]);
+    });
+
     it('a tarball whose bytes changed since it was packed', async () => {
       const file = await pack();
       await writeFile(file, Buffer.concat([await readFile(file), Buffer.from([0])]));
@@ -298,6 +387,44 @@ describe('publishPacked', () => {
     await pack();
     const { options } = setUp({ post: 422 });
     await expect(publishPacked(options)).rejects.toThrow('tagging: HTTP 422');
+  });
+});
+
+describe('allowedTags', () => {
+  it('allows latest, and in pre mode its tag too', async () => {
+    expect(await allowedTags(root)).toEqual(['latest']);
+    await preMode('beta');
+    expect(await allowedTags(root)).toEqual(['latest', 'beta']);
+  });
+
+  it.each([
+    ['a tag that is an option', JSON.stringify({ mode: 'pre', tag: '--registry=x' }), 'bad tag'],
+    ['no tag', JSON.stringify({ mode: 'pre' }), 'bad tag'],
+    ['broken JSON', '{', 'JSON'],
+  ])('refuses a pre.json with %s', async (_, json, error) => {
+    await mkdir(join(root, '.changeset'), { recursive: true });
+    await writeFile(join(root, '.changeset', 'pre.json'), json);
+    await expect(allowedTags(root)).rejects.toThrow(error);
+  });
+
+  it("fails when pre.json can't be read", async () => {
+    await mkdir(join(root, '.changeset', 'pre.json'), { recursive: true });
+    await expect(allowedTags(root)).rejects.toThrow('EISDIR');
+  });
+});
+
+describe('withoutGitHubToken', () => {
+  it('drops GITHUB_TOKEN and keeps the rest', () => {
+    expect(withoutGitHubToken({ A: '1', GITHUB_TOKEN: 'x' })).toEqual({ A: '1' });
+  });
+});
+
+describe('execIn', () => {
+  it('runs the command in exactly the env it is given', async () => {
+    const print =
+      'process.stdout.write(JSON.stringify([process.env.GITHUB_TOKEN, process.env.KEEP]))';
+    const env = withoutGitHubToken({ ...process.env, GITHUB_TOKEN: 'x', KEEP: 'kept' });
+    expect(await execIn(process.execPath, ['-e', print], env)).toBe('[null,"kept"]');
   });
 });
 
