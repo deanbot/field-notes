@@ -1,6 +1,6 @@
 {
   "name": "@deanbot/field-notes",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Rapid, in-context feedback capture for any web app. Notes land as files in your repo, readable by people and agents.",
   "keywords": [
     "feedback",

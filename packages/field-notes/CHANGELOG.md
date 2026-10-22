@@ -1,5 +1,11 @@
 # @deanbot/field-notes
 
+## 1.0.1
+
+### Patch Changes
+
+- 18deb8e: A captured console error (`consoleErrors`) in Firefox or Safari now always keeps its `Error: <message>` line. A short message that happened to appear in a script URL in the stack used to drop it.
+
 ## 1.0.0
 
 ### Major Changes
