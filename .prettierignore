@@ -1,3 +1,6 @@
+# Contributors' local tool files, untracked
+CLAUDE.local.md
+.claude/
 dist
 coverage
 .next

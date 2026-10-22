@@ -52,11 +52,22 @@ The `@field-notes/*` packages are private. They are bundled into `field-notes` a
 - **Explicit types on exports.** `isolatedDeclarations` is on, so exported functions need explicit return types.
 - **Changesets.** If users of `field-notes` will notice a change, add one with `pnpm changeset`.
 
+## CI notes
+
+- **Real screen capture runs only in CI.** `check:dist`'s display-mode check shares a real tab, so it runs only when `CI` is set and prints "(CI only)" everywhere else. Don't set `CI` locally to force it: the browser may ask the OS for screen recording. The widget's tests fake `getDisplayMedia` and Region Capture instead ([test-display.ts](./packages/widget/src/test-display.ts)).
+- **A known flake:** that display-mode check sometimes times out in CI. It's recognised by its signature: `check:dist`'s display-mode check failing with `no screenshot` and a `locator.waitFor` timeout. For that failure, rerun the failed job once. A rerun is the fix: never change the PR to get past it. If the rerun passes, it was the flake. If it fails again, or the failure is anything else, treat it as real; checking whether `main` fails the same way tells you whether the PR caused it.
+
+## Issues and pull requests
+
+- **Issues are welcome**: bugs and ideas both. Use the issue forms (bug report, feature request). Blank issues are off; maintainers file planned work with the task template.
+- **Pull requests are read**, but code from outside contributors runs only in CI, after a maintainer approves the run. A change may be merged as it is, or redone on a maintainer's branch, with credit to you in that PR.
+- **Security problems** are reported privately, as [SECURITY.md](./SECURITY.md) says, never in a public issue or PR.
+
 ## Releasing (maintainers)
 
 Releases are **off by default**. The Release workflow only runs when the `RELEASE_ENABLED` repository variable is `true`, so pushes to `main` before 1.0 can't publish a placeholder.
 
-Once enabled, merging to `main` runs the Release workflow. If there are pending changesets, it opens or updates a "chore: release" PR. Merging that PR publishes to npm with provenance.
+Once enabled, merging to `main` runs the Release workflow. If there are pending changesets, it updates the `changeset-release/main` branch, which the "chore: release" PR comes from. The workflow opens that PR only if the repository lets GitHub Actions create pull requests. Otherwise the Release run pushes the branch and then fails with "GitHub Actions is not permitted to create or approve pull requests". That failure is expected: a maintainer opens the PR from `changeset-release/main`. Merging that PR publishes to npm with provenance.
 
 One-time setup:
 
