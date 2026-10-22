@@ -69,7 +69,9 @@ Releases are **off by default**. The Release workflow only runs when the `RELEAS
 
 Once enabled, merging to `main` runs the Release workflow. If there are pending changesets, it updates the `changeset-release/main` branch, which the "chore: release" PR comes from. The workflow opens that PR only if the repository lets GitHub Actions create pull requests. Otherwise the Release run pushes the branch and then fails with "GitHub Actions is not permitted to create or approve pull requests". That failure is expected: a maintainer opens the PR from `changeset-release/main`. Merging that PR publishes to npm with provenance.
 
-One-time setup:
+Releases publish through npm [trusted publishing](https://docs.npmjs.com/trusted-publishers): npm trusts the Release workflow's run directly, through GitHub's OIDC token, so no npm token is stored anywhere. `changeset publish` publishes with pnpm, which does the exchange itself from 12.14.0, and the workflow checks for that version.
 
-- add an `NPM_TOKEN` repository secret: an npm granular access token with read and write access to packages and 2FA bypass. Classic automation tokens no longer exist, and npm caps write tokens at 90 days, so this one needs replacing before it expires. npm plans to stop direct publishes with these tokens in January 2027, so move to trusted publishing (OIDC) before then
+One-time setup, by a maintainer:
+
+- on npmjs.com, in the package's settings, add a trusted publisher: GitHub Actions, organization or user `deanbot`, repository `field-notes`, workflow `release.yml`, no environment. Adding an `environment:` to the Release job would stop it matching
 - set the `RELEASE_ENABLED` repository variable to `true` when ready to publish
