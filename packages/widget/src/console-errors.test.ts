@@ -40,6 +40,66 @@ describe('captureConsoleErrors', () => {
     expect(entry).toContain('Error: bad');
   });
 
+  /** What `captureConsoleErrors` keeps for `error`, with its stack set to `stack`. */
+  function entryFor(error: Error, stack: string): string | undefined {
+    hostLogger();
+    const capture = start();
+    error.stack = stack;
+    console.error(error);
+    return capture.snapshot()[0];
+  }
+
+  // Fixed stacks, so these run the same on every engine and every build.
+  const FRAMES = 'run@http://localhost:5173/node_modules/.vite/deps/x.js?v=21cbad32:4:7\n';
+
+  it('keeps the header when a frame-only stack happens to contain the message', () => {
+    expect(entryFor(new Error('bad'), FRAMES)).toBe(`Error: bad\n${FRAMES.trim()}`);
+  });
+
+  it('keeps the header when the message is a prefix of the frame text', () => {
+    const stack = 'boomerang@http://localhost:5173/app.js:1:1';
+    expect(entryFor(new Error('boom'), stack)).toBe(`Error: boom\n${stack}`);
+  });
+
+  it("doesn't repeat a header the stack already starts with", () => {
+    const stack = 'Error: bad\n    at run (http://localhost:5173/app.js:4:7)';
+    expect(entryFor(new Error('bad'), stack)).toBe(stack);
+    expect(entryFor(new Error('bad'), 'Error: bad')).toBe('Error: bad');
+  });
+
+  it('keeps a multi-line message the stack already starts with, once', () => {
+    const stack = 'Error: two\nlines\n    at run (http://localhost:5173/app.js:4:7)';
+    expect(entryFor(new Error('two\nlines'), stack)).toBe(stack);
+  });
+
+  it('names an error with an empty message by its name alone', () => {
+    expect(entryFor(new Error(''), FRAMES)).toBe(`Error\n${FRAMES.trim()}`);
+    const chromium = 'Error\n    at run (http://localhost:5173/app.js:4:7)';
+    expect(entryFor(new Error(''), chromium)).toBe(chromium);
+  });
+
+  it("doesn't take a frame that starts with the name for the header", () => {
+    const stack = 'ErrorBoundary@http://localhost:5173/app.js:1:1';
+    expect(entryFor(new Error(''), stack)).toBe(`Error\n${stack}`);
+  });
+
+  it('uses a custom error name in the header', () => {
+    const error = new Error('bad');
+    error.name = 'ValidationError';
+    expect(entryFor(error, FRAMES)).toBe(`ValidationError: bad\n${FRAMES.trim()}`);
+    const custom = new Error('bad');
+    custom.name = 'ValidationError';
+    const stack = 'ValidationError: bad\n    at run (http://localhost:5173/app.js:4:7)';
+    expect(entryFor(custom, stack)).toBe(stack);
+  });
+
+  it('heads an error with an empty name by its message alone', () => {
+    const error = (): Error => Object.assign(new Error('zed'), { name: '' });
+    const chromium = 'zed\n    at run (http://localhost:5173/app.js:4:7)';
+    expect(entryFor(error(), chromium)).toBe(chromium);
+    expect(entryFor(error(), FRAMES)).toBe(`zed\n${FRAMES.trim()}`);
+  });
+
   it('records uncaught errors and unhandled rejections without replacing onerror', () => {
     hostLogger(); // the test runner logs these events through console.error too
     const capture = start();
