@@ -6,10 +6,7 @@ on:
 
 concurrency: release-${{ github.ref }}
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write # npm provenance
+permissions: {}
 
 jobs:
   release:
@@ -17,6 +14,14 @@ jobs:
     # "true", so early pushes to main can't publish a placeholder to npm.
     if: github.repository == 'deanbot/field-notes' && vars.RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
+    # No `environment:` here: npm's trusted publisher for this package names
+    # this workflow with no environment, and won't match a run that has one.
+    permissions:
+      contents: write
+      pull-requests: write
+      # npm trusted publishing: npm trusts this run's OIDC token, so no npm
+      # token is stored anywhere. It signs the provenance too.
+      id-token: write
     env:
       # Publish with provenance. pnpm 12 reads this from PNPM_CONFIG_PROVENANCE
       # only, and an NPM_CONFIG_PROVENANCE beside it turns it off again.
@@ -28,9 +33,17 @@ jobs:
           cache: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
+          # No registry-url: it writes an .npmrc with a placeholder token,
+          # which would stand in front of trusted publishing.
           node-version-file: .nvmrc
-          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      # `changeset publish` publishes with pnpm, which does the OIDC exchange
+      # itself from 12.14.0 (the version checked to have it), not with npm.
+      - name: Check pnpm can publish through trusted publishing
+        run: |
+          version="$(pnpm --version)"
+          echo "pnpm $version"
+          node -e "const [a, b] = process.argv[1].split('.').map(Number); process.exit(a > 12 || (a === 12 && b >= 14) ? 0 : 1)" "$version"
       # A release without provenance can't get it back: stop instead.
       - name: Check provenance is on
         run: test "$(pnpm config get provenance)" = true
@@ -41,4 +54,3 @@ jobs:
           commit-message: 'chore: release'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
