@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "axe-core": "4.14.0",
-    "focus-trap": "8.2.3",
+    "focus-trap": "8.2.4",
     "lit-v2": "npm:lit@2.8.0"
   }
 }
